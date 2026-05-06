@@ -1,0 +1,203 @@
+# shellshock.sh
+
+A remote debugging tool where a support engineer can securely request shell commands on a customer's machine. Every command requires explicit customer approval through a terminal UI — no command runs without consent.
+
+## How It Works
+
+```
+ Engineer (Server TUI)                    Customer (Client TUI)
+ ┌─────────────────────┐                  ┌─────────────────────┐
+ │                     │                  │                     │
+ │  Type: ls -la       │  ── SSE ──────►  │  Allow ls -la?      │
+ │                     │                  │  ❯ Yes              │
+ │  $ ls -la           │  ◄── HTTP POST   │    No               │
+ │    file1.txt        │     (output)     │                     │
+ │    file2.txt        │                  │  $ ls -la ✓ exit 0  │
+ │    ✓ exit 0         │                  │                     │
+ └─────────────────────┘                  └─────────────────────┘
+         │                                         │
+         │         ┌──────────────┐                │
+         └────────►│   Server     │◄───────────────┘
+                   │  (Express)   │
+                   │  + SQLite    │
+                   └──────────────┘
+```
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                        Server                                │
+│                                                              │
+│  Express HTTP  ◄──────────────────────►  Ink TUI             │
+│  ├─ POST /api/sessions/:id/commands      ├─ Session list     │
+│  ├─ GET  /api/sessions/:id/events (SSE)  ├─ Command output   │
+│  ├─ POST /api/sessions/:id/respond       └─ Command input    │
+│  └─ GET  /api/sessions/:id/engineer-events (SSE)             │
+│                                                              │
+│  SessionManager (EventEmitter)                               │
+│  ├─ In-memory: SSE connections, pending commands, keys       │
+│  └─ Durable: SQLite (sessions, commands, output)             │
+└──────────────────────────────────────────────────────────────┘
+                          │
+              SSE (server→client)
+              HTTP POST (client→server)
+                          │
+┌──────────────────────────────────────────────────────────────┐
+│                        Client                                │
+│                                                              │
+│  Ink TUI                                                     │
+│  ├─ Permission prompts (per-command approval)                │
+│  ├─ Command log with classification badges                   │
+│  ├─ Permission rule management ([p] to view/edit)            │
+│  └─ Interactive command support (vim, nano, etc.)            │
+│                                                              │
+│  Executor                                                    │
+│  ├─ child_process.spawn for normal commands                  │
+│  └─ stdio: 'inherit' for interactive commands                │
+│                                                              │
+│  SQLite (per-session permission rules)                       │
+└──────────────────────────────────────────────────────────────┘
+```
+
+## Security
+
+### RSA-2048 Handshake
+
+Every session starts with a cryptographic handshake before any commands can flow:
+
+```
+Server                              Client
+  │                                    │
+  │  1. Generate RSA-2048 keypair      │
+  │     Generate random nonce          │
+  │                                    │
+  │  ── handshake_challenge ────────►  │
+  │     { publicKey, nonce }           │
+  │                                    │
+  │                                    │  2. Encrypt nonce with
+  │                                    │     RSA-OAEP + public key
+  │                                    │
+  │  ◄── handshake_response ────────   │
+  │     { encryptedNonce }             │
+  │                                    │
+  │  3. Decrypt with private key       │
+  │     Verify nonce matches           │
+  │                                    │
+  │  ── handshake_complete ─────────►  │
+  │                                    │
+  │  Commands can now flow             │
+```
+
+### Command Safety
+
+Commands are parsed using a **character-level finite state machine** — not regex. The FSM tracks:
+
+- **Quote state**: single quotes, double quotes, escape sequences
+- **Nesting depth**: `$()`, `()` subshells, backtick regions
+- **Operator detection**: only at depth 0, outside quotes
+
+This prevents injection attacks like `ls; rm -rf /` hiding behind a quoted string or subshell.
+
+**Compound command splitting**: `ls && rm -rf /` is split into individual parts, each prompted separately. The customer sees each sub-command with its own classification:
+
+```
+Part 1 of 2:  ls      [READ-ONLY]   → auto-allowed by rule
+Part 2 of 2:  rm -rf  [DESTRUCTIVE] → prompted
+```
+
+**Classification categories**:
+| Category | Color | Examples |
+|----------|-------|----------|
+| READ-ONLY | Green | ls, cat, grep, git status |
+| WRITE | Yellow | cp, mv, mkdir, git commit |
+| DESTRUCTIVE | Red | rm, kill, dd, git reset --hard |
+| NETWORK | Cyan | curl, wget, ssh, ping |
+| INTERACTIVE | Orange | vim, nano, python, tmux |
+| UNKNOWN | Gray | anything else |
+
+**Permission rules** use structured syntax:
+- `bash(ls:*)` — allow any command starting with `ls`
+- `bash(git:*)` — allow any git command
+- `bash(*)` — allow any simple (non-compound) command
+
+Rules are stored per-session in SQLite — approving `git` for one engineer doesn't carry over to another session.
+
+### What's blocked by default
+
+- Every command requires explicit approval — even `ls`
+- Compound commands are always split and prompted per-part
+- Proxy commands (`sudo`, `env`, `xargs`) are classified by their inner command
+- Path-qualified commands (`/bin/rm`) are stripped to the base name
+- No "allow all" for compound commands — each part must pass individually
+
+## Installation
+
+```bash
+git clone https://github.com/0x0elliot/shellshock.sh.git
+cd shellshock.sh
+npm install
+```
+
+## Usage
+
+### Start the server
+
+```bash
+npx tsx packages/server/src/index.ts
+```
+
+Options:
+- `--port <number>` — default 3000
+- `--host <address>` — default 0.0.0.0
+
+The server TUI shows a session list and command output. Press **Ctrl+N** to create a new session — the connect command is auto-copied to your clipboard.
+
+### Connect a client
+
+```bash
+npx tsx packages/client/src/index.ts "http://host:port/session/<id>?token=<token>"
+```
+
+The client TUI shows a permission prompt for every command the engineer sends.
+
+### Server shortcuts
+
+| Key | Action |
+|-----|--------|
+| Ctrl+N | Create new session |
+| Ctrl+D (×2) | Close active session |
+| ↑↓ | Switch sessions |
+| Escape | Cancel pending command |
+| Ctrl+C | Quit |
+
+### Client shortcuts
+
+| Key | Action |
+|-----|--------|
+| ↑↓ | Navigate prompt options |
+| Enter | Confirm selection |
+| y/a/n | Quick approve/pattern/deny |
+| p | View/edit permission rules |
+| q | Quit |
+| Ctrl+C (×2) | Emergency exit |
+
+## Session Lifecycle
+
+- Sessions are created on the server and persist in SQLite
+- Each session supports exactly 1 engineer + 1 client
+- Sessions expire after 10 minutes of inactivity
+- The server reaps expired sessions every 30 seconds
+- Closed sessions are marked in the database but not deleted (audit trail)
+
+## Tech Stack
+
+- **Runtime**: Node.js
+- **TUI**: [Ink 5](https://github.com/vadimdemedes/ink) (React for terminals)
+- **Transport**: HTTP + Server-Sent Events (works over HTTP/1.1, /2, /3)
+- **Database**: SQLite via better-sqlite3
+- **Crypto**: Node.js built-in `crypto` module (RSA-2048, OAEP padding)
+
+## License
+
+MIT
