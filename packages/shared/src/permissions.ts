@@ -160,7 +160,11 @@ export function isCompoundCommand(command: string): boolean {
     if (ch === "|") return true;
 
     if (ch === "&" && command[i + 1] === "&") return true;
-    if (ch === "&") return true;
+    if (ch === "&") {
+      const prev = i > 0 ? command[i - 1] : "";
+      const next = command[i + 1];
+      if (prev !== ">" && prev !== "<" && next !== ">") return true;
+    }
   }
 
   return false;
@@ -287,9 +291,13 @@ export function splitCompoundCommand(command: string): CommandSegment[] {
     }
 
     if (ch === "&") {
-      push();
-      currentOp = "&";
-      continue;
+      const prev = i > 0 ? command[i - 1] : "";
+      const next = command[i + 1];
+      if (prev !== ">" && prev !== "<" && next !== ">") {
+        push();
+        currentOp = "&";
+        continue;
+      }
     }
 
     if (ch === "|" && command[i + 1] === "|") {

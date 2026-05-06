@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces --if-present",
     "dev:server": "npm run dev -w packages/server",
     "dev:client": "npm run dev -w packages/client"
   }
