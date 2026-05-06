@@ -128,12 +128,20 @@ export function isCompoundCommand(command: string): boolean {
       continue;
     }
     if (ch === "(") {
+      const prev = i > 0 ? command[i - 1] : "";
+      if (depth === 0 && prev !== "<" && prev !== ">") return true;
       depth++;
       continue;
     }
     if (ch === ")" && depth > 0) {
       depth--;
       continue;
+    }
+
+    // Top-level command group: { cmd; }
+    if (ch === "{" && depth === 0) {
+      const next = command[i + 1];
+      if (next === " " || next === "\t" || next === "\n") return true;
     }
 
     if (ch === "`") {
@@ -148,9 +156,11 @@ export function isCompoundCommand(command: string): boolean {
     if (ch === ";") return true;
 
     if (ch === "|" && command[i + 1] === "|") return true;
+    if (ch === "|" && command[i + 1] === "&") return true;
     if (ch === "|") return true;
 
     if (ch === "&" && command[i + 1] === "&") return true;
+    if (ch === "&") return true;
   }
 
   return false;
@@ -160,7 +170,7 @@ export function isCompoundCommand(command: string): boolean {
 // FSM splitter — splits compound commands at top-level operators only
 // ---------------------------------------------------------------------------
 
-export type SplitOperator = "none" | ";" | "&&" | "||" | "|" | "\n";
+export type SplitOperator = "none" | ";" | "&&" | "&" | "||" | "|" | "\n";
 
 export interface CommandSegment {
   command: string;
@@ -276,9 +286,22 @@ export function splitCompoundCommand(command: string): CommandSegment[] {
       continue;
     }
 
+    if (ch === "&") {
+      push();
+      currentOp = "&";
+      continue;
+    }
+
     if (ch === "|" && command[i + 1] === "|") {
       push();
       currentOp = "||";
+      i++;
+      continue;
+    }
+
+    if (ch === "|" && command[i + 1] === "&") {
+      push();
+      currentOp = "|";
       i++;
       continue;
     }
@@ -345,10 +368,36 @@ export function classificationSeverity(c: CommandClassification): number {
   }
 }
 
+function hasCommandSubstitution(command: string): boolean {
+  let inSingleQuote = false;
+  let esc = false;
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+    if (esc) { esc = false; continue; }
+    if (ch === "\\" && !inSingleQuote) { esc = true; continue; }
+    if (ch === "'") { inSingleQuote = !inSingleQuote; continue; }
+    if (inSingleQuote) continue;
+    if (ch === "`") return true;
+    if (ch === "$" && command[i + 1] === "(") return true;
+  }
+  return false;
+}
+
 function classifySingleCommand(command: string): CommandClassification {
   const base = extractBaseCommand(command);
   const trimmed = command.trim();
 
+  if (hasCommandSubstitution(trimmed)) {
+    const baseClass = classifySingleCommandInner(base, trimmed);
+    return classificationSeverity(baseClass) > classificationSeverity(CommandClassification.Unknown)
+      ? baseClass
+      : CommandClassification.Unknown;
+  }
+
+  return classifySingleCommandInner(base, trimmed);
+}
+
+function classifySingleCommandInner(base: string, trimmed: string): CommandClassification {
   if (PROXY_COMMANDS.has(base)) {
     const rest = trimmed.substring(trimmed.indexOf(" ") + 1).trim();
     if (!rest || rest === base) return CommandClassification.Unknown;
@@ -434,8 +483,23 @@ export function parseRule(raw: string): PermissionRule {
   return { raw, toolName, matcher: { type: "exact", value: content } };
 }
 
+function hasVariableExpansion(command: string): boolean {
+  let inSingleQuote = false;
+  let esc = false;
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+    if (esc) { esc = false; continue; }
+    if (ch === "\\" && !inSingleQuote) { esc = true; continue; }
+    if (ch === "'") { inSingleQuote = !inSingleQuote; continue; }
+    if (inSingleQuote) continue;
+    if (ch === "$") return true;
+  }
+  return false;
+}
+
 export function matchesRule(command: string, rule: PermissionRule): boolean {
   if (rule.toolName !== "bash") return false;
+  if (hasVariableExpansion(command)) return false;
 
   const trimmed = command.trim();
 
