@@ -47,6 +47,11 @@ export function App({ sessionManager, host, port }: AppProps) {
   const [notification, setNotification] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [interactiveSession, setInteractiveSession] = useState<{
+    sessionId: string;
+    commandId: string;
+    mode: "client" | "engineer";
+  } | null>(null);
 
   const refreshSessions = useCallback(() => {
     setSessions(sessionManager.getActiveSessions().map(sessionToInfo));
@@ -137,6 +142,9 @@ export function App({ sessionManager, host, port }: AppProps) {
         }
         return next;
       });
+      setInteractiveSession((prev) =>
+        prev && prev.commandId === commandId ? null : prev
+      );
     }
 
     function onCommandCancelled(
@@ -156,6 +164,14 @@ export function App({ sessionManager, host, port }: AppProps) {
       });
     }
 
+    function onInteractiveStarted(
+      sid: string,
+      commandId: string,
+      mode: "client" | "engineer"
+    ) {
+      setInteractiveSession({ sessionId: sid, commandId, mode });
+    }
+
     sessionManager.on("clientConnected", onClientConnected);
     sessionManager.on("clientDisconnected", onClientDisconnected);
     sessionManager.on("handshakeComplete", onHandshakeComplete);
@@ -165,6 +181,7 @@ export function App({ sessionManager, host, port }: AppProps) {
     sessionManager.on("commandOutput", onCommandOutput);
     sessionManager.on("commandExit", onCommandExit);
     sessionManager.on("commandCancelled", onCommandCancelled);
+    sessionManager.on("interactiveStarted", onInteractiveStarted);
 
     return () => {
       sessionManager.off("clientConnected", onClientConnected);
@@ -176,6 +193,7 @@ export function App({ sessionManager, host, port }: AppProps) {
       sessionManager.off("commandOutput", onCommandOutput);
       sessionManager.off("commandExit", onCommandExit);
       sessionManager.off("commandCancelled", onCommandCancelled);
+      sessionManager.off("interactiveStarted", onInteractiveStarted);
     };
   }, [sessionManager, refreshSessions]);
 
@@ -220,9 +238,49 @@ export function App({ sessionManager, host, port }: AppProps) {
     }
   }
 
-  const inputIsActive = canSendCommands && !notification;
+  const engineerInteractive = interactiveSession?.mode === "engineer"
+    && interactiveSession.sessionId === activeSessionId;
+
+  const inputIsActive = canSendCommands && !notification && !engineerInteractive;
+
+  // Engineer-interactive keystroke relay
+  useInput((input, key) => {
+    if (!engineerInteractive || !interactiveSession) return;
+
+    // Ctrl+] exits interactive mode
+    if (key.ctrl && input === "]") {
+      setInteractiveSession(null);
+      return;
+    }
+
+    let data: string;
+    if (key.return) data = "\r";
+    else if (key.escape) data = "\x1b";
+    else if (key.backspace || key.delete) data = "\x7f";
+    else if (key.tab) data = "\t";
+    else if (key.upArrow) data = "\x1b[A";
+    else if (key.downArrow) data = "\x1b[B";
+    else if (key.rightArrow) data = "\x1b[C";
+    else if (key.leftArrow) data = "\x1b[D";
+    else if (key.ctrl && input) {
+      const code = input.toLowerCase().charCodeAt(0) - 96;
+      data = code >= 1 && code <= 26 ? String.fromCharCode(code) : input;
+    } else {
+      data = input;
+    }
+
+    if (data) {
+      sessionManager.sendInteractiveInput(
+        interactiveSession.sessionId,
+        interactiveSession.commandId,
+        data,
+      );
+    }
+  }, { isActive: engineerInteractive });
 
   useInput((input, key) => {
+    if (engineerInteractive) return;
+
     if (notification) {
       setNotification(null);
       return;
@@ -408,32 +466,47 @@ export function App({ sessionManager, host, port }: AppProps) {
 
           {confirmClose && (
             <Box paddingX={2}>
-              <Text color="#f7768e" bold>Close session {activeSessionId.slice(0, 8)}? Press Ctrl+W again to confirm.</Text>
+              <Text color="#f7768e" bold>Close session {activeSessionId.slice(0, 8)}? Press Ctrl+D again to confirm.</Text>
             </Box>
           )}
 
           <Box
             borderStyle="single"
-            borderColor="#3b4261"
+            borderColor={engineerInteractive ? "#ff9e64" : "#3b4261"}
             borderTop={true}
             borderBottom={false}
             borderLeft={false}
             borderRight={false}
           >
-            <CommandInput
-              sessionId={activeSessionId}
-              onSubmit={handleCommandSubmit}
-              disabled={!activeSession || !canSendCommands}
-              disabledReason={
-                !activeSession
-                  ? undefined
-                  : !activeSession.connected
-                    ? "Waiting for client to connect..."
-                    : !activeSession.handshakeComplete
-                      ? "Handshake in progress..."
-                      : undefined
-              }
-            />
+            {engineerInteractive ? (
+              <Box paddingX={1}>
+                <Text color="#ff9e64" bold>INTERACTIVE</Text>
+                <Text color="#565f89">{" — typing goes to remote command. "}</Text>
+                <Text color="#e0af68" bold>Ctrl+]</Text>
+                <Text color="#565f89">{" to detach"}</Text>
+              </Box>
+            ) : interactiveSession?.mode === "client"
+                && interactiveSession.sessionId === activeSessionId ? (
+              <Box paddingX={1}>
+                <Text color="#7dcfff" bold>INTERACTIVE</Text>
+                <Text color="#565f89">{" — client is in control"}</Text>
+              </Box>
+            ) : (
+              <CommandInput
+                sessionId={activeSessionId}
+                onSubmit={handleCommandSubmit}
+                disabled={!activeSession || !canSendCommands}
+                disabledReason={
+                  !activeSession
+                    ? undefined
+                    : !activeSession.connected
+                      ? "Waiting for client to connect..."
+                      : !activeSession.handshakeComplete
+                        ? "Handshake in progress..."
+                        : undefined
+                }
+              />
+            )}
           </Box>
         </Box>
       </Box>

@@ -50,11 +50,14 @@ A remote debugging tool where a support engineer can securely request shell comm
 │  ├─ Permission prompts (per-command approval)                │
 │  ├─ Command log with classification badges                   │
 │  ├─ Permission rule management ([p] to view/edit)            │
-│  └─ Interactive command support (vim, nano, etc.)            │
+│  └─ Interactive command mode choice                          │
+│     ├─ "I'll interact myself" — client controls terminal     │
+│     └─ "Let engineer interact" — remote keystroke relay      │
 │                                                              │
 │  Executor                                                    │
 │  ├─ child_process.spawn for normal commands                  │
-│  └─ stdio: 'inherit' for interactive commands                │
+│  ├─ stdio: 'inherit' for client-interactive commands         │
+│  └─ node-pty for engineer-interactive commands               │
 │                                                              │
 │  SQLite (per-session permission rules)                       │
 └──────────────────────────────────────────────────────────────┘
@@ -130,6 +133,21 @@ Rules are stored per-session in SQLite — approving `git` for one engineer does
 - Proxy commands (`sudo`, `env`, `xargs`) are classified by their inner command
 - Path-qualified commands (`/bin/rm`) are stripped to the base name
 - No "allow all" for compound commands — each part must pass individually
+
+### Interactive Commands
+
+When a command is classified as **INTERACTIVE** (vim, python, mysql, etc.), the client gets a choice:
+
+```
+How would you like to handle this?
+ ❯ I'll interact myself — You control the terminal
+   Let engineer interact — Engineer controls, you watch
+   Deny — Don't run this command
+```
+
+**Client interacts**: The child process gets direct terminal access (`stdio: 'inherit'`). Full vim/nano/tmux support. The engineer sees a status indicator while the client works.
+
+**Engineer interacts**: A real PTY is created via `node-pty`. The engineer's keystrokes are relayed over SSE to the client's PTY, and output is streamed back. The client sees the live terminal output on their screen. The engineer sees stripped text output in their TUI. Press **Ctrl+]** to detach from the interactive session (like telnet).
 
 ## Installation
 

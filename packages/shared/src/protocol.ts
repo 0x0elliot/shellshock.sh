@@ -35,6 +35,24 @@ export interface CommandCancel {
   id: string;
 }
 
+export interface InteractiveMode {
+  type: "interactive_mode";
+  id: string;
+  mode: "client" | "engineer";
+}
+
+export interface InteractiveInput {
+  type: "interactive_input";
+  id: string;
+  data: string;
+}
+
+export interface InteractiveStarted {
+  type: "interactive_started";
+  id: string;
+  mode: "client" | "engineer";
+}
+
 export interface ClientInfo {
   type: "client_info";
   hostname: string;
@@ -96,6 +114,7 @@ export interface HandshakeError {
 export type ServerToClientMessage =
   | CommandRequest
   | CommandCancel
+  | InteractiveInput
   | HandshakeChallenge
   | HandshakeComplete
   | HandshakeError
@@ -108,7 +127,8 @@ export type ClientToServerMessage =
   | CommandOutput
   | CommandExit
   | ClientInfo
-  | HandshakeResponse;
+  | HandshakeResponse
+  | InteractiveMode;
 
 export type ServerToEngineerMessage =
   | CommandRequest
@@ -117,6 +137,7 @@ export type ServerToEngineerMessage =
   | CommandOutput
   | CommandExit
   | CommandCancel
+  | InteractiveStarted
   | ClientConnected
   | ClientDisconnected
   | HandshakeComplete

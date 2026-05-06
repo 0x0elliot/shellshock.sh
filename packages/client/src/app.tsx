@@ -12,12 +12,17 @@ import {
 import { useSSE } from "./hooks/use-sse.js";
 import { usePermissions } from "./hooks/use-permissions.js";
 import { useHandshake } from "./hooks/use-handshake.js";
-import { executeCommand, executeInteractive } from "./executor.js";
+import { executeCommand, executeInteractive, executePTY, type PTYHandle } from "./executor.js";
 import { StatusBar } from "./components/status-bar.js";
 import { CommandLog, type CommandEntry } from "./components/command-log.js";
 import { PermissionPrompt } from "./components/permission-prompt.js";
 import { CompoundPermissionPrompt } from "./components/compound-permission-prompt.js";
 import { AllowlistView } from "./components/allowlist-view.js";
+import { InteractiveChoice, type InteractiveChoiceResult } from "./components/interactive-choice.js";
+
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F]|\x1B(?:\[[0-9;?]*[A-Za-z]|\][^\x07\x1B]*(?:\x07|\x1B\\)|\([A-Za-z0-9]|[>=<])/g;
+function stripAnsi(s: string): string { return s.replace(ANSI_RE, ""); }
 
 interface AppProps {
   serverBaseUrl: string;
@@ -57,12 +62,18 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
   } | null>(null);
   const [commandQueue, setCommandQueue] = useState<CommandRequest[]>([]);
   const [showAllowlist, setShowAllowlist] = useState(false);
-  const [interactiveRun, setInteractiveRun] = useState<CommandRequest | null>(null);
+  const [interactiveChoice, setInteractiveChoice] = useState<CommandRequest | null>(null);
+  const [interactiveRun, setInteractiveRun] = useState<{
+    request: CommandRequest;
+    mode: "client" | "engineer";
+  } | null>(null);
 
   const processedIdsRef = useRef<Set<string>>(new Set());
+  const processedMsgCountRef = useRef(0);
   const killersRef = useRef<Map<string, () => void>>(new Map());
+  const ptyRef = useRef<PTYHandle | null>(null);
 
-  const isPromptActive = pendingPrompt !== null || pendingCompound !== null;
+  const isPromptActive = pendingPrompt !== null || pendingCompound !== null || interactiveChoice !== null;
 
   const postToServer = useCallback(
     async (msg: ClientToServerMessage) => {
@@ -148,17 +159,16 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
       const isInteractive = pendingPrompt.classification === CommandClassification.Interactive;
       setPendingPrompt(null);
 
-      postToServer({ type: "command_approved", id });
-      setCommands((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, status: "approved" as const } : c)),
-      );
-
       if (isInteractive) {
-        setInteractiveRun(request);
+        setInteractiveChoice(request);
       } else {
+        postToServer({ type: "command_approved", id });
+        setCommands((prev) =>
+          prev.map((c) => (c.id === id ? { ...c, status: "approved" as const } : c)),
+        );
         startExecution(request);
+        processQueue();
       }
-      processQueue();
     },
     [pendingPrompt, postToServer, startExecution],
   );
@@ -232,6 +242,36 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
     [permissions],
   );
 
+  // --- Interactive mode choice ---
+
+  const handleInteractiveChoice = useCallback(
+    (choice: InteractiveChoiceResult) => {
+      if (!interactiveChoice) return;
+
+      const request = interactiveChoice;
+      setInteractiveChoice(null);
+
+      if (choice === "deny") {
+        postToServer({ type: "command_denied", id: request.id, reason: "Denied by client" });
+        setCommands((prev) =>
+          prev.map((c) =>
+            c.id === request.id ? { ...c, status: "denied" as const, deniedReason: "Denied by client" } : c,
+          ),
+        );
+        processQueue();
+        return;
+      }
+
+      postToServer({ type: "command_approved", id: request.id });
+      postToServer({ type: "interactive_mode", id: request.id, mode: choice });
+      setCommands((prev) =>
+        prev.map((c) => (c.id === request.id ? { ...c, status: "approved" as const } : c)),
+      );
+      setInteractiveRun({ request, mode: choice });
+    },
+    [interactiveChoice, postToServer],
+  );
+
   // --- Queue ---
 
   const processQueue = useCallback(() => {
@@ -292,11 +332,19 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
         const suggested = suggestRule(request.command);
 
         if (evaluation.decision === "allow") {
-          postToServer({ type: "command_approved", id: request.id });
-          setCommands((prev) =>
-            prev.map((c) => (c.id === request.id ? { ...c, status: "approved" as const } : c)),
-          );
-          startExecution(request);
+          if (classification === CommandClassification.Interactive) {
+            if (isPromptActive) {
+              setCommandQueue((prev) => [...prev, request]);
+            } else {
+              setInteractiveChoice(request);
+            }
+          } else {
+            postToServer({ type: "command_approved", id: request.id });
+            setCommands((prev) =>
+              prev.map((c) => (c.id === request.id ? { ...c, status: "approved" as const } : c)),
+            );
+            startExecution(request);
+          }
         } else if (evaluation.decision === "deny") {
           postToServer({ type: "command_denied", id: request.id, reason: evaluation.reason });
           setCommands((prev) =>
@@ -318,11 +366,18 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
     [permissions, postToServer, startExecution, isPromptActive],
   );
 
-  // Only process command messages after handshake is complete
+  // Process SSE messages (commands, cancellations, interactive input)
   useEffect(() => {
     if (handshake.state !== "complete") return;
 
-    for (const msg of messages) {
+    for (let i = processedMsgCountRef.current; i < messages.length; i++) {
+      const msg = messages[i];
+
+      if (msg.type === "interactive_input") {
+        ptyRef.current?.write(msg.data);
+        continue;
+      }
+
       if (msg.type === "command_request") {
         if (processedIdsRef.current.has(msg.id)) continue;
         processedIdsRef.current.add(msg.id);
@@ -330,7 +385,6 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
       }
 
       if (msg.type === "command_cancel") {
-        // Dismiss prompt if it's for this command
         setPendingPrompt((current) => {
           if (current && current.request.id === msg.id) return null;
           return current;
@@ -339,9 +393,11 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
           if (current && current.request.id === msg.id) return null;
           return current;
         });
-        // Remove from queue
+        setInteractiveChoice((current) => {
+          if (current && current.id === msg.id) return null;
+          return current;
+        });
         setCommandQueue((prev) => prev.filter((r) => r.id !== msg.id));
-        // Mark as cancelled in the log
         setCommands((prev) =>
           prev.map((c) =>
             c.id === msg.id
@@ -351,18 +407,19 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
         );
       }
     }
+    processedMsgCountRef.current = messages.length;
   }, [messages, processRequest, handshake.state]);
 
-  // Interactive command execution — suspends TUI, gives terminal to the child
+  // Client-interactive mode — hand terminal to child process directly
   useEffect(() => {
-    if (!interactiveRun) return;
+    if (!interactiveRun || interactiveRun.mode !== "client") return;
 
-    const request = interactiveRun;
+    const request = interactiveRun.request;
 
-    process.stdout.write("\x1B[?1049l"); // exit alternate screen
+    process.stdout.write("\x1B[?1049l");
 
     executeInteractive(request.command, request.cwd).then(({ code, signal }) => {
-      process.stdout.write("\x1B[?1049h"); // re-enter alternate screen
+      process.stdout.write("\x1B[?1049h");
 
       setCommands((prev) =>
         prev.map((c) =>
@@ -375,6 +432,51 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
       postToServer({ type: "command_exit", id: request.id, exitCode: code, signal });
       setInteractiveRun(null);
     });
+  }, [interactiveRun, postToServer]);
+
+  // Engineer-interactive mode — PTY with remote keystroke relay
+  useEffect(() => {
+    if (!interactiveRun || interactiveRun.mode !== "engineer") return;
+
+    const request = interactiveRun.request;
+
+    process.stdout.write("\x1B[?1049l");
+
+    const handle = executePTY(
+      request.command,
+      request.cwd,
+      (data) => {
+        process.stdout.write(data);
+        const cleaned = stripAnsi(data);
+        if (cleaned) {
+          postToServer({ type: "command_output", id: request.id, stream: "stdout", data: cleaned });
+        }
+      },
+      (code, signal) => {
+        process.stdout.write("\x1B[?1049h");
+        ptyRef.current = null;
+
+        setCommands((prev) =>
+          prev.map((c) =>
+            c.id === request.id
+              ? { ...c, status: (code === 0 ? "completed" : "failed") as "completed" | "failed", exitCode: code }
+              : c,
+          ),
+        );
+
+        postToServer({ type: "command_exit", id: request.id, exitCode: code, signal });
+        setInteractiveRun(null);
+      },
+    );
+
+    ptyRef.current = handle;
+
+    return () => {
+      if (ptyRef.current === handle) {
+        handle.kill();
+        ptyRef.current = null;
+      }
+    };
   }, [interactiveRun, postToServer]);
 
   useInput(
@@ -392,7 +494,7 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
         exit();
       }
     },
-    { isActive: !showAllowlist },
+    { isActive: !showAllowlist && !interactiveRun },
   );
 
   const ruleCount = permissions.allowRules.length + permissions.denyRules.length;
@@ -438,7 +540,13 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
 
       <CommandLog commands={commands} />
 
-      {pendingCompound ? (
+      {interactiveChoice ? (
+        <InteractiveChoice
+          command={interactiveChoice.command}
+          commandId={interactiveChoice.id}
+          onChoice={handleInteractiveChoice}
+        />
+      ) : pendingCompound ? (
         <CompoundPermissionPrompt
           originalCommand={pendingCompound.request.command}
           commandId={pendingCompound.request.id}

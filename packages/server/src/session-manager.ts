@@ -318,6 +318,14 @@ export class SessionManager extends EventEmitter {
     return true;
   }
 
+  sendInteractiveInput(sessionId: string, commandId: string, data: string): void {
+    this.sendToClient(sessionId, {
+      type: "interactive_input",
+      id: commandId,
+      data,
+    });
+  }
+
   getLastPendingCommandId(sessionId: string): string | null {
     const session = this.sessions.get(sessionId);
     if (!session) return null;
@@ -400,6 +408,16 @@ export class SessionManager extends EventEmitter {
           msg.exitCode,
           msg.signal
         );
+        break;
+      }
+
+      case "interactive_mode": {
+        this.sendToEngineer(sessionId, {
+          type: "interactive_started",
+          id: msg.id,
+          mode: msg.mode,
+        });
+        this.emit("interactiveStarted", sessionId, msg.id, msg.mode);
         break;
       }
     }

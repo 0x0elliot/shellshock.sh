@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import * as pty from "node-pty";
 
 // eslint-disable-next-line no-control-regex
 const ANSI_ESCAPE_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F]|\x1B(?:\[[0-9;?]*[A-Za-z]|\][^\x07\x1B]*(?:\x07|\x1B\\)|\([A-Za-z0-9]|[>=<])/g;
@@ -83,6 +84,44 @@ export function executeCommand(
   };
 
   return { kill };
+}
+
+export interface PTYHandle {
+  write: (data: string) => void;
+  resize: (cols: number, rows: number) => void;
+  kill: () => void;
+}
+
+export function executePTY(
+  command: string,
+  cwd: string | undefined,
+  onData: (data: string) => void,
+  onExit: (code: number | null, signal: string | null) => void,
+): PTYHandle {
+  const shell = process.env.SHELL || "/bin/bash";
+  const cols = process.stdout.columns || 80;
+  const rows = process.stdout.rows || 24;
+
+  const ptyProcess = pty.spawn(shell, ["-c", command], {
+    name: "xterm-256color",
+    cols,
+    rows,
+    cwd: cwd || process.cwd(),
+    env: process.env as Record<string, string>,
+  });
+
+  ptyProcess.onData(onData);
+  ptyProcess.onExit(({ exitCode, signal }) => {
+    onExit(exitCode, signal ? String(signal) : null);
+  });
+
+  return {
+    write: (data: string) => ptyProcess.write(data),
+    resize: (cols: number, rows: number) => ptyProcess.resize(cols, rows),
+    kill: () => {
+      try { ptyProcess.kill(); } catch { /* already dead */ }
+    },
+  };
 }
 
 export function executeInteractive(
