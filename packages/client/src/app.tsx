@@ -430,8 +430,13 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
     process.stdout.write("\x1b[?1003l\x1b[?1006l\x1b[?1002l\x1b[?1000l");
     process.stdout.write("\x1B[?1049l");
 
-    // Drain any pending terminal query responses
-    const drainTimeout = setTimeout(() => startPty(), 50);
+    // Drain pending terminal query responses (cursor position, device attrs, colors)
+    const drainHandler = () => {};
+    process.stdin.on("data", drainHandler);
+    const drainTimeout = setTimeout(() => {
+      process.stdin.off("data", drainHandler);
+      startPty();
+    }, 150);
     let stdinHandler: ((data: Buffer) => void) | null = null;
     let handle: PTYHandle | null = null;
 
