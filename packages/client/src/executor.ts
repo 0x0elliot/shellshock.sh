@@ -20,7 +20,7 @@ function ensurePtyPermissions() {
 }
 
 // eslint-disable-next-line no-control-regex
-const ANSI_ESCAPE_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F]|\x1B(?:\[[0-9;?]*[A-Za-z]|\][^\x07\x1B]*(?:\x07|\x1B\\)|\([A-Za-z0-9]|[>=<])/g;
+const ANSI_ESCAPE_RE = /\x1B(?:\[[0-9;?]*[A-Za-z]|\][^\x07\x1B]*(?:\x07|\x1B\\)|\([A-Za-z0-9]|[>=<])|[\x00-\x08\x0B\x0C\x0E-\x1A\x1C-\x1F]/g;
 
 function stripEscapes(data: string): string {
   return data.replace(ANSI_ESCAPE_RE, "");
@@ -153,7 +153,9 @@ export function executeInteractive(
   cwd: string | undefined,
 ): Promise<{ code: number | null; signal: string | null }> {
   return new Promise((resolve) => {
-    if (process.stdin.isTTY) process.stdin.setRawMode(false);
+    // Don't change raw mode — the child process (vim, htop, etc.) sets its
+    // own terminal mode via termios. Forcing canonical mode here fights with
+    // programs that expect raw mode from the start.
     process.stdin.pause();
 
     const child = spawn(command, [], {
@@ -163,13 +165,11 @@ export function executeInteractive(
     });
 
     child.on("exit", (code, signal) => {
-      if (process.stdin.isTTY) process.stdin.setRawMode(true);
       process.stdin.resume();
       resolve({ code, signal: signal ?? null });
     });
 
     child.on("error", () => {
-      if (process.stdin.isTTY) process.stdin.setRawMode(true);
       process.stdin.resume();
       resolve({ code: -1, signal: null });
     });

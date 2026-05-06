@@ -24,7 +24,7 @@ interface OutputStreamProps {
 function CommandBlock({ entry, showOutput }: { entry: CommandEntry; showOutput: boolean }) {
   const tagColor = classificationColor(entry.classification);
   const outputLines = showOutput
-    ? (entry.output?.split("\n").filter(Boolean).slice(-8) ?? [])
+    ? (entry.output?.split("\n").filter(Boolean).slice(-20) ?? [])
     : [];
 
   return (

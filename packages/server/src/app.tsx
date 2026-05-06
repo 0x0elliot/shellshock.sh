@@ -246,44 +246,65 @@ export function App({ sessionManager, host, port }: AppProps) {
 
   const inputIsActive = canSendCommands && !notification && !engineerInteractive;
 
-  // Engineer-interactive keystroke relay
-  useInput((input, key) => {
+  // Engineer-interactive terminal takeover — raw stdin/stdout, Ink suppressed
+  useEffect(() => {
     if (!engineerInteractive || !interactiveSession) return;
 
-    // Ctrl+] exits interactive mode and kills the running command
-    if (key.ctrl && input === "]") {
-      sessionManager.killRunningCommand(
-        interactiveSession.sessionId,
-        interactiveSession.commandId,
-      );
-      setInteractiveSession(null);
-      return;
-    }
+    const { sessionId: sid, commandId: cid } = interactiveSession;
 
-    let data: string;
-    if (key.return) data = "\r";
-    else if (key.escape) data = "\x1b";
-    else if (key.backspace || key.delete) data = "\x7f";
-    else if (key.tab) data = "\t";
-    else if (key.upArrow) data = "\x1b[A";
-    else if (key.downArrow) data = "\x1b[B";
-    else if (key.rightArrow) data = "\x1b[C";
-    else if (key.leftArrow) data = "\x1b[D";
-    else if (key.ctrl && input) {
-      const code = input.toLowerCase().charCodeAt(0) - 96;
-      data = code >= 1 && code <= 26 ? String.fromCharCode(code) : input;
-    } else {
-      data = input;
-    }
+    const savedDataListeners = process.stdin.rawListeners("data").slice();
+    const savedKeypressListeners = process.stdin.rawListeners("keypress").slice();
+    process.stdin.removeAllListeners("data");
+    process.stdin.removeAllListeners("keypress");
 
-    if (data) {
-      sessionManager.sendInteractiveInput(
-        interactiveSession.sessionId,
-        interactiveSession.commandId,
-        data,
+    const rawStdoutWrite = process.stdout.write.bind(process.stdout) as typeof process.stdout.write;
+    (process.stdout as any).write = (() => true) as any;
+
+    rawStdoutWrite("\x1b[?1003l\x1b[?1006l\x1b[?1002l\x1b[?1000l");
+    rawStdoutWrite("\x1B[?1049l");
+    rawStdoutWrite("\x1B[2J\x1B[H");
+
+    const stdinHandler = (chunk: Buffer) => {
+      const str = chunk.toString();
+      if (str === "\x1d") {
+        sessionManager.killRunningCommand(sid, cid);
+        setInteractiveSession(null);
+        return;
+      }
+      sessionManager.sendInteractiveInput(sid, cid, str);
+    };
+    process.stdin.on("data", stdinHandler);
+
+    const outputHandler = (_sid: string, _cmdId: string, data: string) => {
+      rawStdoutWrite(data);
+    };
+    sessionManager.on("interactiveOutput", outputHandler);
+
+    sessionManager.sendInteractiveResize(
+      sid, cid, process.stdout.columns, process.stdout.rows,
+    );
+
+    const resizeHandler = () => {
+      sessionManager.sendInteractiveResize(
+        sid, cid, process.stdout.columns, process.stdout.rows,
       );
-    }
-  }, { isActive: engineerInteractive });
+    };
+    process.stdout.on("resize", resizeHandler);
+
+    return () => {
+      process.stdin.off("data", stdinHandler);
+      sessionManager.off("interactiveOutput", outputHandler);
+      process.stdout.off("resize", resizeHandler);
+
+      (process.stdout as any).write = rawStdoutWrite;
+      process.stdout.write("\x1B[?1049h");
+
+      process.stdin.removeAllListeners("data");
+      process.stdin.removeAllListeners("keypress");
+      for (const l of savedDataListeners) process.stdin.on("data", l as (...args: unknown[]) => void);
+      for (const l of savedKeypressListeners) process.stdin.on("keypress", l as (...args: unknown[]) => void);
+    };
+  }, [engineerInteractive, interactiveSession, sessionManager]);
 
   useInput((input, key) => {
     if (engineerInteractive) return;
@@ -410,6 +431,10 @@ export function App({ sessionManager, host, port }: AppProps) {
       next.set(activeSessionId, [...existing, entry]);
       return next;
     });
+  }
+
+  if (engineerInteractive) {
+    return <Box />;
   }
 
   return (

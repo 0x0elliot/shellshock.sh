@@ -12,7 +12,7 @@ import {
 import { useSSE } from "./hooks/use-sse.js";
 import { usePermissions } from "./hooks/use-permissions.js";
 import { useHandshake } from "./hooks/use-handshake.js";
-import { executeCommand, executePTY, type PTYHandle } from "./executor.js";
+import { executeCommand, executePTY, executeInteractive, type PTYHandle } from "./executor.js";
 import { StatusBar } from "./components/status-bar.js";
 import { CommandLog, type CommandEntry } from "./components/command-log.js";
 import { PermissionPrompt } from "./components/permission-prompt.js";
@@ -20,9 +20,6 @@ import { CompoundPermissionPrompt } from "./components/compound-permission-promp
 import { AllowlistView } from "./components/allowlist-view.js";
 import { InteractiveChoice, type InteractiveChoiceResult } from "./components/interactive-choice.js";
 
-// eslint-disable-next-line no-control-regex
-const ANSI_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F]|\x1B(?:\[[0-9;?]*[A-Za-z]|\][^\x07\x1B]*(?:\x07|\x1B\\)|\([A-Za-z0-9]|[>=<])/g;
-function stripAnsi(s: string): string { return s.replace(ANSI_RE, ""); }
 
 interface AppProps {
   serverBaseUrl: string;
@@ -378,6 +375,11 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
         continue;
       }
 
+      if (msg.type === "interactive_resize") {
+        ptyRef.current?.resize(msg.cols, msg.rows);
+        continue;
+      }
+
       if (msg.type === "command_request") {
         if (processedIdsRef.current.has(msg.id)) continue;
         processedIdsRef.current.add(msg.id);
@@ -414,103 +416,54 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
     processedMsgCountRef.current = messages.length;
   }, [messages, processRequest, handshake.state]);
 
-  // Client-interactive mode — client controls stdin, output relayed to engineer
+  // Client-interactive mode — hand the terminal directly to the child process.
+  // stdio:"inherit" gives the child direct fd 0/1/2 ownership. No PTY, no
+  // stdin forwarding, no terminal response filtering needed.
   useEffect(() => {
     if (!interactiveRun || interactiveRun.mode !== "client") return;
 
     const request = interactiveRun.request;
+    let cancelled = false;
 
-    // Take over terminal from Ink: save its listeners and remove them
     const savedDataListeners = process.stdin.rawListeners("data").slice();
     const savedKeypressListeners = process.stdin.rawListeners("keypress").slice();
     process.stdin.removeAllListeners("data");
     process.stdin.removeAllListeners("keypress");
 
-    // Disable mouse tracking, exit alt screen
-    process.stdout.write("\x1b[?1003l\x1b[?1006l\x1b[?1002l\x1b[?1000l");
-    process.stdout.write("\x1B[?1049l");
+    const rawStdoutWrite = process.stdout.write.bind(process.stdout) as typeof process.stdout.write;
+    (process.stdout as any).write = (() => true) as any;
 
-    // Eat all stdin until PTY is ready (terminal query responses, early keystrokes)
-    const drainHandler = () => {};
-    process.stdin.on("data", drainHandler);
+    rawStdoutWrite("\x1b[?1003l\x1b[?1006l\x1b[?1002l\x1b[?1000l");
+    rawStdoutWrite("\x1B[?1049l");
 
-    let stdinHandler: ((data: Buffer) => void) | null = null;
-    let stdinConnected = false;
+    (async () => {
+      const { code, signal } = await executeInteractive(
+        request.command,
+        request.cwd,
+      );
 
-    // Terminal response patterns to filter from stdin
-    // eslint-disable-next-line no-control-regex
-    const TERM_RESPONSE_RE = /\x1b\[\d+;\d+R|\x1b\[[?>]\d+[;\d]*c|\x1b\]\d+;[^\x07]*\x07|\x1b\]\d+;[^\x1b]*\x1b\\/g;
-
-    // Start PTY immediately, but don't connect stdin until first output
-    const handle = executePTY(
-      request.command,
-      request.cwd,
-      (data) => {
-        // On first PTY output, the program has initialized — connect stdin
-        if (!stdinConnected) {
-          stdinConnected = true;
-          process.stdin.off("data", drainHandler);
-          const filterEnd = Date.now() + 500;
-          stdinHandler = (chunk: Buffer) => {
-            let str = chunk.toString();
-            if (Date.now() < filterEnd) {
-              str = str.replace(TERM_RESPONSE_RE, "");
-              if (!str) return;
-            }
-            handle.write(str);
-          };
-          process.stdin.on("data", stdinHandler);
-        }
-
-        process.stdout.write(data);
-        const cleaned = stripAnsi(data);
-        if (cleaned) {
-          postToServer({ type: "command_output", id: request.id, stream: "stdout", data: cleaned });
-        }
-      },
-      (code, signal) => {
-        cleanup();
-        setCommands((prev) =>
-          prev.map((c) =>
-            c.id === request.id
-              ? { ...c, status: (code === 0 ? "completed" : "failed") as "completed" | "failed", exitCode: code }
-              : c,
-          ),
-        );
-        postToServer({ type: "command_exit", id: request.id, exitCode: code, signal });
-        setInteractiveRun(null);
-      },
-    );
-
-    ptyRef.current = handle;
-
-    // Fallback: connect stdin after 1s even if no PTY output
-    const fallbackTimer = setTimeout(() => {
-      if (!stdinConnected) {
-        stdinConnected = true;
-        process.stdin.off("data", drainHandler);
-        stdinHandler = (chunk: Buffer) => { handle.write(chunk.toString()); };
-        process.stdin.on("data", stdinHandler);
-      }
-    }, 1000);
-
-    function cleanup() {
-      clearTimeout(fallbackTimer);
-      if (stdinHandler) process.stdin.off("data", stdinHandler);
-      if (!stdinConnected) process.stdin.off("data", drainHandler);
+      (process.stdout as any).write = rawStdoutWrite;
       process.stdout.write("\x1B[?1049h");
-      ptyRef.current = null;
 
       process.stdin.removeAllListeners("data");
       process.stdin.removeAllListeners("keypress");
       for (const l of savedDataListeners) process.stdin.on("data", l as (...args: unknown[]) => void);
       for (const l of savedKeypressListeners) process.stdin.on("keypress", l as (...args: unknown[]) => void);
-    }
 
-    return () => {
-      cleanup();
-      handle.kill();
-    };
+      if (cancelled) return;
+
+      setCommands((prev) =>
+        prev.map((c) =>
+          c.id === request.id
+            ? { ...c, status: (code === 0 ? "completed" : "failed") as "completed" | "failed", exitCode: code }
+            : c,
+        ),
+      );
+      postToServer({ type: "command_exit", id: request.id, exitCode: code, signal });
+      setInteractiveRun(null);
+    })();
+
+    return () => { cancelled = true; };
   }, [interactiveRun, postToServer]);
 
   // Engineer-interactive mode — PTY with remote keystroke relay
@@ -519,19 +472,21 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
 
     const request = interactiveRun.request;
 
-    process.stdout.write("\x1B[?1049l");
+    // Suppress Ink stdout writes (same reason as client mode)
+    const rawStdoutWrite = process.stdout.write.bind(process.stdout) as typeof process.stdout.write;
+    (process.stdout as any).write = (() => true) as any;
+
+    rawStdoutWrite("\x1B[?1049l");
 
     const handle = executePTY(
       request.command,
       request.cwd,
       (data) => {
-        process.stdout.write(data);
-        const cleaned = stripAnsi(data);
-        if (cleaned) {
-          postToServer({ type: "command_output", id: request.id, stream: "stdout", data: cleaned });
-        }
+        rawStdoutWrite(data);
+        postToServer({ type: "interactive_output", id: request.id, data });
       },
       (code, signal) => {
+        (process.stdout as any).write = rawStdoutWrite;
         process.stdout.write("\x1B[?1049h");
         ptyRef.current = null;
 
@@ -552,6 +507,7 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
 
     return () => {
       if (ptyRef.current === handle) {
+        (process.stdout as any).write = rawStdoutWrite;
         handle.kill();
         ptyRef.current = null;
       }

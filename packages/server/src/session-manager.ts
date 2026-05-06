@@ -326,6 +326,15 @@ export class SessionManager extends EventEmitter {
     });
   }
 
+  sendInteractiveResize(sessionId: string, commandId: string, cols: number, rows: number): void {
+    this.sendToClient(sessionId, {
+      type: "interactive_resize",
+      id: commandId,
+      cols,
+      rows,
+    });
+  }
+
   killRunningCommand(sessionId: string, commandId: string): void {
     dbOps.updateCommandStatus(commandId, "cancelled");
     this.sendToClient(sessionId, { type: "command_cancel", id: commandId });
@@ -424,6 +433,11 @@ export class SessionManager extends EventEmitter {
           mode: msg.mode,
         });
         this.emit("interactiveStarted", sessionId, msg.id, msg.mode);
+        break;
+      }
+
+      case "interactive_output": {
+        this.emit("interactiveOutput", sessionId, msg.id, msg.data);
         break;
       }
     }

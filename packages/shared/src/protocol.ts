@@ -53,6 +53,19 @@ export interface InteractiveStarted {
   mode: "client" | "engineer";
 }
 
+export interface InteractiveOutput {
+  type: "interactive_output";
+  id: string;
+  data: string;
+}
+
+export interface InteractiveResize {
+  type: "interactive_resize";
+  id: string;
+  cols: number;
+  rows: number;
+}
+
 export interface ClientInfo {
   type: "client_info";
   hostname: string;
@@ -115,6 +128,7 @@ export type ServerToClientMessage =
   | CommandRequest
   | CommandCancel
   | InteractiveInput
+  | InteractiveResize
   | HandshakeChallenge
   | HandshakeComplete
   | HandshakeError
@@ -128,7 +142,8 @@ export type ClientToServerMessage =
   | CommandExit
   | ClientInfo
   | HandshakeResponse
-  | InteractiveMode;
+  | InteractiveMode
+  | InteractiveOutput;
 
 export type ServerToEngineerMessage =
   | CommandRequest
