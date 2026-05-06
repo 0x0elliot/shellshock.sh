@@ -12,7 +12,7 @@ import {
 import { useSSE } from "./hooks/use-sse.js";
 import { usePermissions } from "./hooks/use-permissions.js";
 import { useHandshake } from "./hooks/use-handshake.js";
-import { executeCommand, executeInteractive, executePTY, type PTYHandle } from "./executor.js";
+import { executeCommand, executePTY, type PTYHandle } from "./executor.js";
 import { StatusBar } from "./components/status-bar.js";
 import { CommandLog, type CommandEntry } from "./components/command-log.js";
 import { PermissionPrompt } from "./components/permission-prompt.js";
@@ -410,7 +410,7 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
     processedMsgCountRef.current = messages.length;
   }, [messages, processRequest, handshake.state]);
 
-  // Client-interactive mode — hand terminal to child process directly
+  // Client-interactive mode — client controls stdin, output relayed to engineer
   useEffect(() => {
     if (!interactiveRun || interactiveRun.mode !== "client") return;
 
@@ -418,20 +418,48 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
 
     process.stdout.write("\x1B[?1049l");
 
-    executeInteractive(request.command, request.cwd).then(({ code, signal }) => {
-      process.stdout.write("\x1B[?1049h");
+    const handle = executePTY(
+      request.command,
+      request.cwd,
+      (data) => {
+        process.stdout.write(data);
+        const cleaned = stripAnsi(data);
+        if (cleaned) {
+          postToServer({ type: "command_output", id: request.id, stream: "stdout", data: cleaned });
+        }
+      },
+      (code, signal) => {
+        stdinHandler && process.stdin.off("data", stdinHandler);
+        process.stdout.write("\x1B[?1049h");
+        ptyRef.current = null;
 
-      setCommands((prev) =>
-        prev.map((c) =>
-          c.id === request.id
-            ? { ...c, status: (code === 0 ? "completed" : "failed") as "completed" | "failed", exitCode: code }
-            : c,
-        ),
-      );
+        setCommands((prev) =>
+          prev.map((c) =>
+            c.id === request.id
+              ? { ...c, status: (code === 0 ? "completed" : "failed") as "completed" | "failed", exitCode: code }
+              : c,
+          ),
+        );
 
-      postToServer({ type: "command_exit", id: request.id, exitCode: code, signal });
-      setInteractiveRun(null);
-    });
+        postToServer({ type: "command_exit", id: request.id, exitCode: code, signal });
+        setInteractiveRun(null);
+      },
+    );
+
+    ptyRef.current = handle;
+
+    const stdinHandler = (data: Buffer) => {
+      handle.write(data.toString());
+    };
+    process.stdin.on("data", stdinHandler);
+
+    return () => {
+      process.stdin.off("data", stdinHandler);
+      if (ptyRef.current === handle) {
+        handle.kill();
+        ptyRef.current = null;
+      }
+    };
   }, [interactiveRun, postToServer]);
 
   // Engineer-interactive mode — PTY with remote keystroke relay
