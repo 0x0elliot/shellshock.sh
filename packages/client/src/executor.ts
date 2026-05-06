@@ -99,15 +99,20 @@ export function executePTY(
   onExit: (code: number | null, signal: string | null) => void,
 ): PTYHandle {
   const shell = process.env.SHELL || "/bin/bash";
-  const cols = process.stdout.columns || 80;
-  const rows = process.stdout.rows || 24;
+  const cols = Math.max(process.stdout.columns || 80, 1);
+  const rows = Math.max(process.stdout.rows || 24, 1);
+
+  const cleanEnv: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v !== undefined) cleanEnv[k] = v;
+  }
 
   const ptyProcess = pty.spawn(shell, ["-c", command], {
     name: "xterm-256color",
     cols,
     rows,
     cwd: cwd || process.cwd(),
-    env: process.env as Record<string, string>,
+    env: cleanEnv,
   });
 
   ptyProcess.onData(onData);
