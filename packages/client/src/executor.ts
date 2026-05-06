@@ -1,5 +1,23 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { chmodSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { createRequire } from "node:module";
 import * as pty from "node-pty";
+
+let ptyReady = false;
+function ensurePtyPermissions() {
+  if (ptyReady) return;
+  ptyReady = true;
+  try {
+    const req = createRequire(import.meta.url);
+    const pkgPath = req.resolve("node-pty/package.json");
+    const helper = join(dirname(pkgPath), "prebuilds", `${process.platform}-${process.arch}`, "spawn-helper");
+    const stat = statSync(helper);
+    if (!(stat.mode & 0o111)) {
+      chmodSync(helper, stat.mode | 0o755);
+    }
+  } catch { /* best effort */ }
+}
 
 // eslint-disable-next-line no-control-regex
 const ANSI_ESCAPE_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F]|\x1B(?:\[[0-9;?]*[A-Za-z]|\][^\x07\x1B]*(?:\x07|\x1B\\)|\([A-Za-z0-9]|[>=<])/g;
@@ -98,6 +116,7 @@ export function executePTY(
   onData: (data: string) => void,
   onExit: (code: number | null, signal: string | null) => void,
 ): PTYHandle {
+  ensurePtyPermissions();
   const shell = process.env.SHELL || "/bin/bash";
   const cols = Math.max(process.stdout.columns || 80, 1);
   const rows = Math.max(process.stdout.rows || 24, 1);
