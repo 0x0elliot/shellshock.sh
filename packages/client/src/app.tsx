@@ -426,59 +426,81 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
     process.stdin.removeAllListeners("data");
     process.stdin.removeAllListeners("keypress");
 
-    // Disable mouse tracking (Ink may have enabled it), exit alt screen
+    // Disable mouse tracking, exit alt screen
     process.stdout.write("\x1b[?1003l\x1b[?1006l\x1b[?1002l\x1b[?1000l");
     process.stdout.write("\x1B[?1049l");
 
-    // Drain pending terminal query responses (cursor position, device attrs, colors)
+    // Eat all stdin until PTY is ready (terminal query responses, early keystrokes)
     const drainHandler = () => {};
     process.stdin.on("data", drainHandler);
-    const drainTimeout = setTimeout(() => {
-      process.stdin.off("data", drainHandler);
-      startPty();
-    }, 150);
+
     let stdinHandler: ((data: Buffer) => void) | null = null;
-    let handle: PTYHandle | null = null;
+    let stdinConnected = false;
 
-    function startPty() {
-      handle = executePTY(
-        request.command,
-        request.cwd,
-        (data) => {
-          process.stdout.write(data);
-          const cleaned = stripAnsi(data);
-          if (cleaned) {
-            postToServer({ type: "command_output", id: request.id, stream: "stdout", data: cleaned });
-          }
-        },
-        (code, signal) => {
-          cleanup();
-          setCommands((prev) =>
-            prev.map((c) =>
-              c.id === request.id
-                ? { ...c, status: (code === 0 ? "completed" : "failed") as "completed" | "failed", exitCode: code }
-                : c,
-            ),
-          );
-          postToServer({ type: "command_exit", id: request.id, exitCode: code, signal });
-          setInteractiveRun(null);
-        },
-      );
+    // Terminal response patterns to filter from stdin
+    // eslint-disable-next-line no-control-regex
+    const TERM_RESPONSE_RE = /\x1b\[\d+;\d+R|\x1b\[[?>]\d+[;\d]*c|\x1b\]\d+;[^\x07]*\x07|\x1b\]\d+;[^\x1b]*\x1b\\/g;
 
-      ptyRef.current = handle;
+    // Start PTY immediately, but don't connect stdin until first output
+    const handle = executePTY(
+      request.command,
+      request.cwd,
+      (data) => {
+        // On first PTY output, the program has initialized — connect stdin
+        if (!stdinConnected) {
+          stdinConnected = true;
+          process.stdin.off("data", drainHandler);
+          const filterEnd = Date.now() + 500;
+          stdinHandler = (chunk: Buffer) => {
+            let str = chunk.toString();
+            if (Date.now() < filterEnd) {
+              str = str.replace(TERM_RESPONSE_RE, "");
+              if (!str) return;
+            }
+            handle.write(str);
+          };
+          process.stdin.on("data", stdinHandler);
+        }
 
-      stdinHandler = (data: Buffer) => {
-        handle?.write(data.toString());
-      };
-      process.stdin.on("data", stdinHandler);
-    }
+        process.stdout.write(data);
+        const cleaned = stripAnsi(data);
+        if (cleaned) {
+          postToServer({ type: "command_output", id: request.id, stream: "stdout", data: cleaned });
+        }
+      },
+      (code, signal) => {
+        cleanup();
+        setCommands((prev) =>
+          prev.map((c) =>
+            c.id === request.id
+              ? { ...c, status: (code === 0 ? "completed" : "failed") as "completed" | "failed", exitCode: code }
+              : c,
+          ),
+        );
+        postToServer({ type: "command_exit", id: request.id, exitCode: code, signal });
+        setInteractiveRun(null);
+      },
+    );
+
+    ptyRef.current = handle;
+
+    // Fallback: connect stdin after 1s even if no PTY output
+    const fallbackTimer = setTimeout(() => {
+      if (!stdinConnected) {
+        stdinConnected = true;
+        process.stdin.off("data", drainHandler);
+        stdinHandler = (chunk: Buffer) => { handle.write(chunk.toString()); };
+        process.stdin.on("data", stdinHandler);
+      }
+    }, 1000);
 
     function cleanup() {
+      clearTimeout(fallbackTimer);
       if (stdinHandler) process.stdin.off("data", stdinHandler);
+      if (!stdinConnected) process.stdin.off("data", drainHandler);
       process.stdout.write("\x1B[?1049h");
       ptyRef.current = null;
 
-      // Restore Ink's listeners
       process.stdin.removeAllListeners("data");
       process.stdin.removeAllListeners("keypress");
       for (const l of savedDataListeners) process.stdin.on("data", l as (...args: unknown[]) => void);
@@ -486,11 +508,8 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
     }
 
     return () => {
-      clearTimeout(drainTimeout);
-      if (handle) {
-        cleanup();
-        handle.kill();
-      }
+      cleanup();
+      handle.kill();
     };
   }, [interactiveRun, postToServer]);
 

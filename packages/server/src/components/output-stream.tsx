@@ -21,12 +21,14 @@ interface OutputStreamProps {
   maxHeight: number;
 }
 
-function CommandBlock({ entry }: { entry: CommandEntry }) {
+function CommandBlock({ entry, showOutput }: { entry: CommandEntry; showOutput: boolean }) {
   const tagColor = classificationColor(entry.classification);
-  const outputLines = entry.output?.split("\n").filter(Boolean).slice(-10) ?? [];
+  const outputLines = showOutput
+    ? (entry.output?.split("\n").filter(Boolean).slice(-8) ?? [])
+    : [];
 
   return (
-    <Box flexDirection="column" marginBottom={1}>
+    <Box flexDirection="column">
       <Box gap={1}>
         <Text color="#565f89">{"  $"}</Text>
         <Text bold color="#c0caf5">{entry.command}</Text>
@@ -68,11 +70,6 @@ function CommandBlock({ entry }: { entry: CommandEntry }) {
 }
 
 export function OutputStream({ commands, maxHeight }: OutputStreamProps) {
-  const visible =
-    commands.length > maxHeight
-      ? commands.slice(commands.length - maxHeight)
-      : commands;
-
   if (commands.length === 0) {
     return (
       <Box flexDirection="column" paddingX={2} paddingY={1}>
@@ -85,10 +82,20 @@ export function OutputStream({ commands, maxHeight }: OutputStreamProps) {
     );
   }
 
+  // Show only recent commands, with output only for the last few
+  const visible = commands.slice(-maxHeight);
+  const showOutputFor = new Set(
+    visible.slice(-3).map((e) => e.id),
+  );
+
   return (
-    <Box flexDirection="column" paddingX={1} paddingY={1}>
+    <Box flexDirection="column" paddingX={1} paddingY={1} overflowY="hidden">
       {visible.map((entry) => (
-        <CommandBlock key={entry.id} entry={entry} />
+        <CommandBlock
+          key={entry.id}
+          entry={entry}
+          showOutput={showOutputFor.has(entry.id)}
+        />
       ))}
     </Box>
   );
