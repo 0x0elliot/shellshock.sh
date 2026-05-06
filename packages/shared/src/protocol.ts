@@ -30,6 +30,11 @@ export interface CommandExit {
   signal: string | null;
 }
 
+export interface CommandCancel {
+  type: "command_cancel";
+  id: string;
+}
+
 export interface ClientInfo {
   type: "client_info";
   hostname: string;
@@ -90,6 +95,7 @@ export interface HandshakeError {
 
 export type ServerToClientMessage =
   | CommandRequest
+  | CommandCancel
   | HandshakeChallenge
   | HandshakeComplete
   | HandshakeError
@@ -110,6 +116,7 @@ export type ServerToEngineerMessage =
   | CommandDenied
   | CommandOutput
   | CommandExit
+  | CommandCancel
   | ClientConnected
   | ClientDisconnected
   | HandshakeComplete

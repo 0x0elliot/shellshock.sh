@@ -30,11 +30,11 @@ export function StatusBar({ host, port, sessionCount }: StatusBarProps) {
           {sessionCount} session{sessionCount !== 1 ? "s" : ""}
         </Text>
         <Text dimColor>{" │ "}</Text>
-        <Text dimColor>[1-9]</Text><Text color="#565f89"> switch</Text>
+        <Text dimColor>[↑↓]</Text><Text color="#565f89"> switch</Text>
         <Text dimColor>{" │ "}</Text>
         <Text dimColor>Ctrl+N</Text><Text color="#565f89"> new</Text>
         <Text dimColor>{" │ "}</Text>
-        <Text dimColor>[d]</Text><Text color="#565f89"> close</Text>
+        <Text dimColor>Ctrl+D</Text><Text color="#565f89"> close</Text>
         <Text dimColor>{" │ "}</Text>
         <Text dimColor>Ctrl+C</Text><Text color="#565f89"> quit</Text>
       </Text>

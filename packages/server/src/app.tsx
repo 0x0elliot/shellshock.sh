@@ -139,6 +139,23 @@ export function App({ sessionManager, host, port }: AppProps) {
       });
     }
 
+    function onCommandCancelled(
+      _sessionId: string,
+      commandId: string
+    ) {
+      setCommandsBySession((prev) => {
+        const next = new Map(prev);
+        for (const [sid, cmds] of next) {
+          next.set(sid, cmds.map((cmd) =>
+            cmd.id === commandId
+              ? { ...cmd, status: "denied" as const, deniedReason: "Cancelled" }
+              : cmd
+          ));
+        }
+        return next;
+      });
+    }
+
     sessionManager.on("clientConnected", onClientConnected);
     sessionManager.on("clientDisconnected", onClientDisconnected);
     sessionManager.on("handshakeComplete", onHandshakeComplete);
@@ -147,6 +164,7 @@ export function App({ sessionManager, host, port }: AppProps) {
     sessionManager.on("commandDenied", onCommandDenied);
     sessionManager.on("commandOutput", onCommandOutput);
     sessionManager.on("commandExit", onCommandExit);
+    sessionManager.on("commandCancelled", onCommandCancelled);
 
     return () => {
       sessionManager.off("clientConnected", onClientConnected);
@@ -157,6 +175,7 @@ export function App({ sessionManager, host, port }: AppProps) {
       sessionManager.off("commandDenied", onCommandDenied);
       sessionManager.off("commandOutput", onCommandOutput);
       sessionManager.off("commandExit", onCommandExit);
+      sessionManager.off("commandCancelled", onCommandCancelled);
     };
   }, [sessionManager, refreshSessions]);
 
@@ -185,23 +204,31 @@ export function App({ sessionManager, host, port }: AppProps) {
     }
   }, []);
 
+  const activeSession = sessions[activeIndex] ?? null;
+  const activeSessionId = activeSession?.id ?? "";
+  const activeCommands = activeSessionId
+    ? commandsBySession.get(activeSessionId) ?? []
+    : [];
+
+  const canSendCommands = activeSession?.handshakeComplete === true;
+
+  let connectUrl: string | null = null;
+  if (activeSession && !activeSession.connected) {
+    const raw = sessionManager.getSession(activeSessionId);
+    if (raw) {
+      connectUrl = `http://${host}:${port}/session/${raw.id}?token=${raw.token}`;
+    }
+  }
+
+  const inputIsActive = canSendCommands && !notification;
+
   useInput((input, key) => {
     if (notification) {
       setNotification(null);
       return;
     }
 
-    const num = parseInt(input, 10);
-    if (num >= 1 && num <= 9 && num <= sessions.length) {
-      setActiveIndex(num - 1);
-      return;
-    }
-
-    if (input === "c" && !key.ctrl && connectUrl) {
-      copyToClipboard(`npx tsx packages/client/src/index.ts "${connectUrl}"`);
-      return;
-    }
-
+    // Ctrl-based shortcuts always work, even when typing
     if (input === "n" && key.ctrl) {
       const { sessionId, token } = sessionManager.createSession();
       const url = `http://${host}:${port}/session/${sessionId}?token=${token}`;
@@ -223,7 +250,7 @@ export function App({ sessionManager, host, port }: AppProps) {
       return;
     }
 
-    if ((input === "d" || input === "D") && !key.ctrl && activeSessionId) {
+    if (input === "d" && key.ctrl && activeSessionId) {
       if (confirmClose) {
         sessionManager.closeSession(activeSessionId);
         setCommandsBySession((prev) => {
@@ -241,7 +268,7 @@ export function App({ sessionManager, host, port }: AppProps) {
       return;
     }
 
-    if (confirmClose && input !== "d" && input !== "D") {
+    if (confirmClose) {
       setConfirmClose(false);
     }
 
@@ -249,24 +276,48 @@ export function App({ sessionManager, host, port }: AppProps) {
       exit();
       process.kill(process.pid, "SIGINT");
     }
-  });
 
-  const activeSession = sessions[activeIndex] ?? null;
-  const activeSessionId = activeSession?.id ?? "";
-  const activeCommands = activeSessionId
-    ? commandsBySession.get(activeSessionId) ?? []
-    : [];
-
-  const canSendCommands = activeSession?.handshakeComplete === true;
-
-  // Build connect URL for active session (shown when client not connected)
-  let connectUrl: string | null = null;
-  if (activeSession && !activeSession.connected) {
-    const raw = sessionManager.getSession(activeSessionId);
-    if (raw) {
-      connectUrl = `http://${host}:${port}/session/${raw.id}?token=${raw.token}`;
+    // Escape cancels the last pending command
+    if (key.escape && activeSessionId) {
+      const lastPending = sessionManager.getLastPendingCommandId(activeSessionId);
+      if (lastPending) {
+        sessionManager.cancelCommand(activeSessionId, lastPending);
+        setCommandsBySession((prev) => {
+          const next = new Map(prev);
+          const cmds = next.get(activeSessionId) ?? [];
+          next.set(activeSessionId, cmds.map((cmd) =>
+            cmd.id === lastPending ? { ...cmd, status: "denied" as const, deniedReason: "Cancelled by engineer" } : cmd
+          ));
+          return next;
+        });
+      }
+      return;
     }
-  }
+
+    // Single-key shortcuts only when text input is NOT focused
+    if (inputIsActive) return;
+
+    const num = parseInt(input, 10);
+    if (num >= 1 && num <= 9 && num <= sessions.length) {
+      setActiveIndex(num - 1);
+      return;
+    }
+
+    if (input === "c" && connectUrl) {
+      copyToClipboard(`npx tsx packages/client/src/index.ts "${connectUrl}"`);
+      return;
+    }
+
+    if (key.upArrow && sessions.length > 1) {
+      setActiveIndex((prev) => (prev > 0 ? prev - 1 : sessions.length - 1));
+      return;
+    }
+
+    if (key.downArrow && sessions.length > 1) {
+      setActiveIndex((prev) => (prev < sessions.length - 1 ? prev + 1 : 0));
+      return;
+    }
+  });
 
   function handleCommandSubmit(command: string) {
     if (!activeSessionId || !canSendCommands) return;

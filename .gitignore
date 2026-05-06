@@ -8,6 +8,8 @@ dist/
 
 # OS
 .DS_Store
+*.swp
+*.swo
 
 # Logs
 *.log

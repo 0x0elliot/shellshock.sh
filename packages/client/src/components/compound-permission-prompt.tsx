@@ -1,8 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { Box, Text, useInput } from "ink";
 import {
-  type GroupEvaluation,
-  classifyCommand,
+  type SegmentEvaluation,
   classificationColor,
   suggestRule,
 } from "@remote-debugger/shared";
@@ -11,8 +10,8 @@ import { AnimatedSpinner } from "./animated-spinner.js";
 interface CompoundPermissionPromptProps {
   originalCommand: string;
   commandId: string;
-  promptGroups: GroupEvaluation[];
-  totalGroups: number;
+  promptSegments: SegmentEvaluation[];
+  totalSegments: number;
   onAllApproved: (id: string) => void;
   onDeny: (id: string, reason: string) => void;
   onAllowPattern: (id: string, rule: string) => void;
@@ -29,8 +28,8 @@ interface Option {
 export function CompoundPermissionPrompt({
   originalCommand,
   commandId,
-  promptGroups,
-  totalGroups,
+  promptSegments,
+  totalSegments,
   onAllApproved,
   onDeny,
   onAllowPattern,
@@ -38,22 +37,21 @@ export function CompoundPermissionPrompt({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState(0);
 
-  const current = promptGroups[currentIndex];
+  const current = promptSegments[currentIndex];
   if (!current) return null;
 
-  const group = current.group;
-  const borderColor = classificationColor(group.classification);
-  const suggested = !group.isPipeline ? suggestRule(group.fullText) : null;
+  const borderColor = classificationColor(current.classification);
+  const suggested = suggestRule(current.segment.command);
 
   const options = useMemo<Option[]>(() => {
     const opts: Option[] = [
       {
         key: "y",
         label: "Yes",
-        description: `Allow this ${group.isPipeline ? "pipeline" : "command"}`,
+        description: "Allow this command",
         color: "#9ece6a",
         action: () => {
-          if (currentIndex < promptGroups.length - 1) {
+          if (currentIndex < promptSegments.length - 1) {
             setCurrentIndex((prev) => prev + 1);
             setSelectedOption(0);
           } else {
@@ -64,14 +62,16 @@ export function CompoundPermissionPrompt({
     ];
 
     if (suggested) {
+      const base = current.segment.command.trim().split(/\s+/)[0] ?? "";
+      const clean = base.includes("/") ? base.split("/").pop()! : base;
       opts.push({
         key: "a",
         label: "Yes, don't ask again",
-        description: `Allow all \`${group.fullText.trim().split(/\s+/)[0]}\` commands`,
+        description: `Allow all \`${clean}\` commands`,
         color: "#7aa2f7",
         action: () => {
           onAllowPattern(commandId, suggested);
-          if (currentIndex < promptGroups.length - 1) {
+          if (currentIndex < promptSegments.length - 1) {
             setCurrentIndex((prev) => prev + 1);
             setSelectedOption(0);
           } else {
@@ -86,11 +86,11 @@ export function CompoundPermissionPrompt({
       label: "No",
       description: "Deny the entire command",
       color: "#f7768e",
-      action: () => onDeny(commandId, `Denied at part: ${group.fullText}`),
+      action: () => onDeny(commandId, `Denied: ${current.segment.command}`),
     });
 
     return opts;
-  }, [commandId, currentIndex, promptGroups.length, group, suggested, onAllApproved, onDeny, onAllowPattern]);
+  }, [commandId, currentIndex, promptSegments.length, current, suggested, onAllApproved, onDeny, onAllowPattern]);
 
   useInput((_input, key) => {
     if (key.upArrow) {
@@ -105,12 +105,10 @@ export function CompoundPermissionPrompt({
     }
   });
 
-  const groupNumber = currentIndex + 1;
-  const totalPrompts = promptGroups.length;
+  const promptNum = currentIndex + 1;
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      {/* Full command context */}
       <Box paddingX={2} paddingBottom={1}>
         <Text color="#565f89">Full command: </Text>
         <Text color="#565f89" dimColor>{originalCommand}</Text>
@@ -127,36 +125,25 @@ export function CompoundPermissionPrompt({
         <Box gap={1}>
           <AnimatedSpinner color={borderColor} />
           <Text color="#c0caf5" bold>
-            Reviewing part {groupNumber}/{totalPrompts} ({totalGroups} total in command):
+            Part {promptNum} of {promptSegments.length} ({totalSegments} in command):
           </Text>
         </Box>
 
         <Text>{" "}</Text>
 
-        {group.isPipeline ? (
-          <Box flexDirection="column" paddingLeft={2}>
-            {group.segments.map((seg, i) => {
-              const segColor = classificationColor(classifyCommand(seg.command));
-              return (
-                <Box key={i} gap={1}>
-                  {i > 0 && <Text color="#565f89">| </Text>}
-                  <Text color={segColor} bold>{seg.command}</Text>
-                </Box>
-              );
-            })}
-            <Text>{" "}</Text>
-            <Text color="#e0af68">
-              {"⚠ Pipeline — all stages run together"}
-            </Text>
-          </Box>
-        ) : (
+        <Box paddingLeft={2}>
+          <Text color={borderColor} bold>{current.segment.command}</Text>
+        </Box>
+
+        {current.segment.operator !== "none" && (
           <Box paddingLeft={2}>
-            <Text color={borderColor} bold>{group.fullText}</Text>
+            <Text color="#565f89" dimColor>
+              connected by: {current.segment.operator}
+            </Text>
           </Box>
         )}
       </Box>
 
-      {/* Options */}
       <Box flexDirection="column" paddingX={2} paddingTop={1}>
         {options.map((opt, i) => {
           const selected = i === selectedOption;

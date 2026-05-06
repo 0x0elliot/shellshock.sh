@@ -3,7 +3,7 @@ import { Box, Text, useInput, useApp } from "ink";
 import {
   type CommandRequest,
   type ClientToServerMessage,
-  type CompoundPermissionEvaluation,
+  type CompoundPermissionEvaluation as CompoundEval,
   CommandClassification,
   classifyCommand,
   suggestRule,
@@ -53,7 +53,7 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
   } | null>(null);
   const [pendingCompound, setPendingCompound] = useState<{
     request: CommandRequest;
-    evaluation: CompoundPermissionEvaluation;
+    evaluation: CompoundEval;
   } | null>(null);
   const [commandQueue, setCommandQueue] = useState<CommandRequest[]>([]);
   const [showAllowlist, setShowAllowlist] = useState(false);
@@ -328,6 +328,28 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
         processedIdsRef.current.add(msg.id);
         processRequest(msg);
       }
+
+      if (msg.type === "command_cancel") {
+        // Dismiss prompt if it's for this command
+        setPendingPrompt((current) => {
+          if (current && current.request.id === msg.id) return null;
+          return current;
+        });
+        setPendingCompound((current) => {
+          if (current && current.request.id === msg.id) return null;
+          return current;
+        });
+        // Remove from queue
+        setCommandQueue((prev) => prev.filter((r) => r.id !== msg.id));
+        // Mark as cancelled in the log
+        setCommands((prev) =>
+          prev.map((c) =>
+            c.id === msg.id
+              ? { ...c, status: "denied" as const, deniedReason: "Cancelled by engineer" }
+              : c,
+          ),
+        );
+      }
     }
   }, [messages, processRequest, handshake.state]);
 
@@ -420,8 +442,8 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
         <CompoundPermissionPrompt
           originalCommand={pendingCompound.request.command}
           commandId={pendingCompound.request.id}
-          promptGroups={pendingCompound.evaluation.promptGroups}
-          totalGroups={pendingCompound.evaluation.groups.length}
+          promptSegments={pendingCompound.evaluation.promptSegments}
+          totalSegments={pendingCompound.evaluation.segments.length}
           onAllApproved={handleCompoundAllApproved}
           onDeny={handleCompoundDeny}
           onAllowPattern={handleCompoundAllowPattern}

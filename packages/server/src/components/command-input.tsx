@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Box, Text } from "ink";
+import React, { useState, useRef } from "react";
+import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
 import { AnimatedSpinner } from "./animated-spinner.js";
 
@@ -17,10 +17,48 @@ export function CommandInput({
   disabledReason,
 }: CommandInputProps) {
   const [value, setValue] = useState("");
+  const historyRef = useRef<string[]>([]);
+  const historyIndexRef = useRef(-1);
+  const savedInputRef = useRef("");
+
+  useInput((_input, key) => {
+    if (disabled) return;
+
+    if (key.upArrow) {
+      const history = historyRef.current;
+      if (history.length === 0) return;
+
+      if (historyIndexRef.current === -1) {
+        savedInputRef.current = value;
+      }
+
+      const nextIdx = Math.min(historyIndexRef.current + 1, history.length - 1);
+      historyIndexRef.current = nextIdx;
+      setValue(history[history.length - 1 - nextIdx]);
+      return;
+    }
+
+    if (key.downArrow) {
+      if (historyIndexRef.current <= 0) {
+        historyIndexRef.current = -1;
+        setValue(savedInputRef.current);
+        return;
+      }
+
+      historyIndexRef.current -= 1;
+      const history = historyRef.current;
+      setValue(history[history.length - 1 - historyIndexRef.current]);
+      return;
+    }
+  });
 
   function handleSubmit(input: string) {
     const trimmed = input.trim();
     if (!trimmed) return;
+
+    historyRef.current.push(trimmed);
+    historyIndexRef.current = -1;
+    savedInputRef.current = "";
 
     onSubmit(trimmed);
     setValue("");

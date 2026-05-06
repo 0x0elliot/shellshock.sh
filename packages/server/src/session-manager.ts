@@ -302,6 +302,33 @@ export class SessionManager extends EventEmitter {
     return commandId;
   }
 
+  cancelCommand(sessionId: string, commandId: string): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session) return false;
+
+    if (!session.pendingCommands.has(commandId)) return false;
+
+    session.pendingCommands.delete(commandId);
+    dbOps.updateCommandStatus(commandId, "cancelled");
+
+    this.sendToClient(sessionId, { type: "command_cancel", id: commandId });
+    this.sendToEngineer(sessionId, { type: "command_cancel", id: commandId });
+
+    this.emit("commandCancelled", sessionId, commandId);
+    return true;
+  }
+
+  getLastPendingCommandId(sessionId: string): string | null {
+    const session = this.sessions.get(sessionId);
+    if (!session) return null;
+
+    let lastId: string | null = null;
+    for (const id of session.pendingCommands.keys()) {
+      lastId = id;
+    }
+    return lastId;
+  }
+
   handleClientResponse(
     sessionId: string,
     msg: ClientToServerMessage

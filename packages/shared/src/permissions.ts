@@ -167,12 +167,6 @@ export interface CommandSegment {
   operator: SplitOperator;
 }
 
-export interface CommandGroup {
-  fullText: string;
-  segments: CommandSegment[];
-  classification: CommandClassification;
-  isPipeline: boolean;
-}
 
 export function splitCompoundCommand(command: string): CommandSegment[] {
   const segments: CommandSegment[] = [];
@@ -304,49 +298,6 @@ export function splitCompoundCommand(command: string): CommandSegment[] {
   return segments.length > 0
     ? segments
     : [{ command: command.trim(), operator: "none" as SplitOperator }];
-}
-
-// ---------------------------------------------------------------------------
-// Pipeline grouping — consecutive pipe-connected segments form one group
-// ---------------------------------------------------------------------------
-
-export function groupPipelines(segments: CommandSegment[]): CommandGroup[] {
-  const groups: CommandGroup[] = [];
-  let currentSegments: CommandSegment[] = [];
-
-  for (const seg of segments) {
-    if (seg.operator === "|" && currentSegments.length > 0) {
-      // Continue the pipeline
-      currentSegments.push(seg);
-    } else {
-      // Flush previous group
-      if (currentSegments.length > 0) {
-        groups.push(buildGroup(currentSegments));
-      }
-      currentSegments = [seg];
-    }
-  }
-
-  if (currentSegments.length > 0) {
-    groups.push(buildGroup(currentSegments));
-  }
-
-  return groups;
-}
-
-function buildGroup(segments: CommandSegment[]): CommandGroup {
-  const isPipeline = segments.length > 1;
-  const fullText = segments.map((s) => s.command).join(" | ");
-
-  let worst: CommandClassification = CommandClassification.ReadOnly;
-  for (const seg of segments) {
-    const cls = classifySingleCommand(seg.command);
-    if (classificationSeverity(cls) > classificationSeverity(worst)) {
-      worst = cls;
-    }
-  }
-
-  return { fullText, segments, classification: worst, isPipeline };
 }
 
 // ---------------------------------------------------------------------------
@@ -561,20 +512,21 @@ export function evaluatePermission(
 }
 
 // ---------------------------------------------------------------------------
-// Compound permission evaluation — per-group approval
+// Compound permission evaluation — per-segment approval
 // ---------------------------------------------------------------------------
 
-export interface GroupEvaluation {
-  group: CommandGroup;
+export interface SegmentEvaluation {
+  segment: CommandSegment;
+  classification: CommandClassification;
   evaluation: PermissionEvaluation;
 }
 
 export interface CompoundPermissionEvaluation {
   originalCommand: string;
-  groups: GroupEvaluation[];
+  segments: SegmentEvaluation[];
   overallDecision: "allow" | "deny" | "prompt";
   denyReason?: string;
-  promptGroups: GroupEvaluation[];
+  promptSegments: SegmentEvaluation[];
 }
 
 export function evaluateCompoundPermission(
@@ -583,73 +535,30 @@ export function evaluateCompoundPermission(
   denyRules: PermissionRule[]
 ): CompoundPermissionEvaluation {
   const segments = splitCompoundCommand(command);
-  const groups = groupPipelines(segments);
 
-  const groupEvals: GroupEvaluation[] = [];
-  const promptGroups: GroupEvaluation[] = [];
+  const segEvals: SegmentEvaluation[] = [];
+  const promptSegments: SegmentEvaluation[] = [];
   let overallDecision: "allow" | "deny" | "prompt" = "allow";
   let denyReason: string | undefined;
 
-  for (const group of groups) {
-    if (group.isPipeline) {
-      // Evaluate each stage; if ALL allow → allow, if ANY deny → deny, else prompt
-      let groupDecision: "allow" | "deny" | "prompt" = "allow";
-      let groupDenyReason: string | undefined;
+  for (const seg of segments) {
+    const classification = classifySingleCommand(seg.command);
+    const eval_ = evaluatePermission(seg.command, allowRules, denyRules);
+    const se: SegmentEvaluation = { segment: seg, classification, evaluation: eval_ };
+    segEvals.push(se);
 
-      for (const seg of group.segments) {
-        const eval_ = evaluatePermission(seg.command, allowRules, denyRules);
-        if (eval_.decision === "deny") {
-          groupDecision = "deny";
-          groupDenyReason = eval_.reason;
-          break;
-        }
-        if (eval_.decision === "prompt") {
-          groupDecision = "prompt";
-        }
-      }
-
-      const ge: GroupEvaluation = {
-        group,
-        evaluation: {
-          decision: groupDecision,
-          reason: groupDenyReason ?? (groupDecision === "allow"
-            ? "All pipeline stages matched allow rules"
-            : "Pipeline requires approval"),
-          classification: group.classification,
-          isCompound: group.isPipeline,
-        },
-      };
-
-      groupEvals.push(ge);
-
-      if (groupDecision === "deny") {
-        overallDecision = "deny";
-        denyReason = groupDenyReason;
-        break;
-      }
-      if (groupDecision === "prompt") {
-        overallDecision = "prompt";
-        promptGroups.push(ge);
-      }
-    } else {
-      // Single command group — evaluate directly
-      const eval_ = evaluatePermission(group.fullText, allowRules, denyRules);
-      const ge: GroupEvaluation = { group, evaluation: eval_ };
-      groupEvals.push(ge);
-
-      if (eval_.decision === "deny") {
-        overallDecision = "deny";
-        denyReason = eval_.reason;
-        break;
-      }
-      if (eval_.decision === "prompt") {
-        overallDecision = "prompt";
-        promptGroups.push(ge);
-      }
+    if (eval_.decision === "deny") {
+      overallDecision = "deny";
+      denyReason = eval_.reason;
+      break;
+    }
+    if (eval_.decision === "prompt") {
+      overallDecision = "prompt";
+      promptSegments.push(se);
     }
   }
 
-  return { originalCommand: command, groups: groupEvals, overallDecision, denyReason, promptGroups };
+  return { originalCommand: command, segments: segEvals, overallDecision, denyReason, promptSegments };
 }
 
 // ---------------------------------------------------------------------------
