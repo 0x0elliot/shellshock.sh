@@ -1,0 +1,15 @@
+{
+  "name": "remote-debugger",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "packages/server",
+    "packages/client"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "dev:server": "npm run dev -w packages/server",
+    "dev:client": "npm run dev -w packages/client"
+  }
+}

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Remote Debugger</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a1b26;
+      color: #c0caf5;
+      font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #status-bar {
+      background: #24283b;
+      border-bottom: 1px solid #3b4261;
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #565f89;
+      transition: background 0.3s;
+    }
+    .status-dot.connected { background: #9ece6a; }
+    .status-dot.waiting {
+      background: #e0af68;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    .status-dot.error { background: #f7768e; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .status-label { color: #7aa2f7; font-weight: 600; }
+    .status-sep { color: #3b4261; }
+    .status-info { color: #565f89; }
+    #terminal-container {
+      flex: 1;
+      padding: 4px;
+      overflow: hidden;
+    }
+    #input-bar {
+      background: #24283b;
+      border-top: 1px solid #3b4261;
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .prompt-prefix {
+      color: #7aa2f7;
+      font-weight: 600;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+    #command-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #c0caf5;
+      font-family: inherit;
+      font-size: 14px;
+      caret-color: #7aa2f7;
+    }
+    #command-input::placeholder { color: #565f89; }
+    #command-input:disabled { opacity: 0.4; cursor: not-allowed; }
+    .pending-badge {
+      display: none;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    .pending-badge.show {
+      display: inline-block;
+      background: rgba(224, 175, 104, 0.15);
+      color: #e0af68;
+    }
+    .pending-badge.denied {
+      display: inline-block;
+      background: rgba(247, 118, 142, 0.15);
+      color: #f7768e;
+      animation: none;
+    }
+    .pending-badge.approved {
+      display: inline-block;
+      background: rgba(158, 206, 106, 0.15);
+      color: #9ece6a;
+      animation: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="status-bar">
+    <div class="status-dot" id="status-dot"></div>
+    <span class="status-label">Remote Debugger</span>
+    <span class="status-sep">│</span>
+    <span class="status-info" id="session-label">—</span>
+    <span class="status-sep">│</span>
+    <span class="status-info" id="client-info">Waiting for client...</span>
+    <span style="flex:1"></span>
+    <span class="pending-badge" id="pending-badge">AWAITING APPROVAL</span>
+  </div>
+  <div id="terminal-container"></div>
+  <div id="input-bar">
+    <span class="prompt-prefix" id="prompt-prefix">$</span>
+    <input id="command-input" type="text" placeholder="Type a command..." autofocus disabled>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+  <script>
+    const pathParts = window.location.pathname.split('/');
+    const sessionIdx = pathParts.indexOf('session');
+    const sessionId = sessionIdx >= 0 ? pathParts[sessionIdx + 1] : null;
+
+    if (!sessionId) {
+      document.body.innerHTML = '<div style="padding:40px;color:#f7768e">Invalid session URL. Expected /session/:id</div>';
+      throw new Error('No session ID');
+    }
+
+    const $ = (sel) => document.querySelector(sel);
+    const statusDot = $('#status-dot');
+    const sessionLabel = $('#session-label');
+    const clientInfo = $('#client-info');
+    const pendingBadge = $('#pending-badge');
+    const commandInput = $('#command-input');
+    const promptPrefix = $('#prompt-prefix');
+
+    sessionLabel.textContent = `Session ${sessionId.substring(0, 8)}`;
+    promptPrefix.textContent = `${sessionId.substring(0, 8)} ›`;
+
+    const term = new window.Terminal({
+      theme: {
+        background: '#1a1b26',
+        foreground: '#c0caf5',
+        cursor: '#7aa2f7',
+        selectionBackground: '#33467c',
+        black: '#15161e', red: '#f7768e', green: '#9ece6a', yellow: '#e0af68',
+        blue: '#7aa2f7', magenta: '#bb9af7', cyan: '#7dcfff', white: '#a9b1d6',
+        brightBlack: '#414868', brightRed: '#f7768e', brightGreen: '#9ece6a',
+        brightYellow: '#e0af68', brightBlue: '#7aa2f7', brightMagenta: '#bb9af7',
+        brightCyan: '#7dcfff', brightWhite: '#c0caf5',
+      },
+      fontFamily: "'SF Mono', 'Fira Code', 'JetBrains Mono', monospace",
+      fontSize: 14,
+      lineHeight: 1.4,
+      cursorBlink: false,
+      disableStdin: true,
+      scrollback: 5000,
+    });
+
+    const fitAddon = new window.FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(document.getElementById('terminal-container'));
+    fitAddon.fit();
+    window.addEventListener('resize', () => fitAddon.fit());
+
+    term.writeln('\x1b[38;2;122;162;247m  Remote Debugger — Web Terminal\x1b[0m');
+    term.writeln('\x1b[38;2;86;95;137m  Waiting for client to connect...\x1b[0m');
+    term.writeln('');
+
+    let pendingCommandId = null;
+
+    const evtSource = new EventSource(`/api/sessions/${sessionId}/engineer-events`);
+
+    evtSource.onopen = () => {
+      statusDot.className = 'status-dot waiting';
+    };
+
+    evtSource.onerror = () => {
+      statusDot.className = 'status-dot error';
+      clientInfo.textContent = 'Connection lost — reconnecting...';
+    };
+
+    evtSource.onmessage = (event) => {
+      let msg;
+      try { msg = JSON.parse(event.data); } catch { return; }
+
+      switch (msg.type) {
+        case 'client_connected':
+          statusDot.className = 'status-dot connected';
+          const ci = msg.clientInfo;
+          clientInfo.textContent = `${ci.username}@${ci.hostname} (${ci.platform})`;
+          commandInput.disabled = false;
+          commandInput.placeholder = 'Type a command...';
+          term.writeln(`\x1b[38;2;158;206;106m  ● Client connected: ${ci.username}@${ci.hostname}\x1b[0m`);
+          term.writeln('');
+          break;
+
+        case 'client_disconnected':
+          statusDot.className = 'status-dot error';
+          clientInfo.textContent = `Disconnected: ${msg.reason}`;
+          commandInput.disabled = true;
+          term.writeln(`\x1b[38;2;247;118;142m  ○ Client disconnected: ${msg.reason}\x1b[0m`);
+          term.writeln('');
+          break;
+
+        case 'command_approved':
+          pendingBadge.className = 'pending-badge approved';
+          pendingBadge.textContent = 'APPROVED';
+          setTimeout(() => { pendingBadge.className = 'pending-badge'; }, 2000);
+          term.writeln(`\x1b[38;2;158;206;106m  ✓ approved\x1b[0m`);
+          break;
+
+        case 'command_denied':
+          pendingBadge.className = 'pending-badge denied';
+          pendingBadge.textContent = 'DENIED';
+          setTimeout(() => { pendingBadge.className = 'pending-badge'; }, 3000);
+          const reason = msg.reason ? `: ${msg.reason}` : '';
+          term.writeln(`\x1b[38;2;247;118;142m  ✗ denied${reason}\x1b[0m`);
+          term.writeln('');
+          pendingCommandId = null;
+          commandInput.disabled = false;
+          commandInput.focus();
+          break;
+
+        case 'command_output':
+          term.write(msg.data);
+          break;
+
+        case 'command_exit': {
+          const code = msg.exitCode;
+          const color = code === 0 ? '158;206;106' : '247;118;142';
+          term.writeln('');
+          term.writeln(`\x1b[38;2;${color}m  exit: ${code ?? 'signal ' + msg.signal}\x1b[0m`);
+          term.writeln('');
+          pendingCommandId = null;
+          commandInput.disabled = false;
+          commandInput.focus();
+          break;
+        }
+
+        case 'heartbeat':
+          break;
+      }
+    };
+
+    commandInput.addEventListener('keydown', async (e) => {
+      if (e.key !== 'Enter') return;
+      const cmd = commandInput.value.trim();
+      if (!cmd) return;
+      if (pendingCommandId) return;
+
+      commandInput.value = '';
+      commandInput.disabled = true;
+      pendingBadge.className = 'pending-badge show';
+      pendingBadge.textContent = 'AWAITING APPROVAL';
+
+      term.writeln(`\x1b[38;2;86;95;137m  $\x1b[0m \x1b[1m${cmd}\x1b[0m`);
+
+      try {
+        const res = await fetch(`/api/sessions/${sessionId}/commands`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: cmd }),
+        });
+        const data = await res.json();
+        pendingCommandId = data.commandId;
+      } catch (err) {
+        term.writeln(`\x1b[38;2;247;118;142m  Error: ${err.message}\x1b[0m`);
+        commandInput.disabled = false;
+        pendingBadge.className = 'pending-badge';
+      }
+    });
+
+    commandInput.focus();
+  </script>
+</body>
+</html>

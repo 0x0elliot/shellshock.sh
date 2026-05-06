@@ -1,0 +1,114 @@
+import { spawn, type ChildProcess } from "node:child_process";
+
+// eslint-disable-next-line no-control-regex
+const ANSI_ESCAPE_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F]|\x1B(?:\[[0-9;?]*[A-Za-z]|\][^\x07\x1B]*(?:\x07|\x1B\\)|\([A-Za-z0-9]|[>=<])/g;
+
+function stripEscapes(data: string): string {
+  return data.replace(ANSI_ESCAPE_RE, "");
+}
+
+export function executeCommand(
+  command: string,
+  cwd: string | undefined,
+  onStdout: (data: string) => void,
+  onStderr: (data: string) => void,
+  onExit: (code: number | null, signal: string | null) => void
+): { kill: () => void } {
+  let child: ChildProcess;
+  let exited = false;
+
+  try {
+    child = spawn(command, [], {
+      shell: true,
+      cwd: cwd || process.cwd(),
+      env: process.env,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    onStderr(`Failed to spawn command: ${message}`);
+    onExit(-1, null);
+    return { kill: () => {} };
+  }
+
+  child.stdout?.setEncoding("utf8");
+  child.stderr?.setEncoding("utf8");
+
+  child.stdout?.on("data", (data: string) => {
+    onStdout(stripEscapes(data));
+  });
+
+  child.stderr?.on("data", (data: string) => {
+    onStderr(stripEscapes(data));
+  });
+
+  child.on("error", (err: Error) => {
+    if (!exited) {
+      exited = true;
+      onStderr(`Command error: ${err.message}`);
+      onExit(-1, null);
+    }
+  });
+
+  child.on("exit", (code: number | null, signal: NodeJS.Signals | null) => {
+    if (!exited) {
+      exited = true;
+      onExit(code, signal ? signal : null);
+    }
+  });
+
+  const kill = () => {
+    if (exited) return;
+
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      // Process may already be gone
+    }
+
+    // Force kill after 5 seconds if still alive
+    const forceKillTimer = setTimeout(() => {
+      if (!exited) {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // Ignore
+        }
+      }
+    }, 5000);
+
+    // Don't let the timer keep the process alive
+    if (typeof forceKillTimer === "object" && forceKillTimer && "unref" in forceKillTimer) {
+      (forceKillTimer as NodeJS.Timeout).unref();
+    }
+  };
+
+  return { kill };
+}
+
+export function executeInteractive(
+  command: string,
+  cwd: string | undefined,
+): Promise<{ code: number | null; signal: string | null }> {
+  return new Promise((resolve) => {
+    if (process.stdin.isTTY) process.stdin.setRawMode(false);
+    process.stdin.pause();
+
+    const child = spawn(command, [], {
+      shell: true,
+      cwd: cwd || process.cwd(),
+      stdio: "inherit",
+    });
+
+    child.on("exit", (code, signal) => {
+      if (process.stdin.isTTY) process.stdin.setRawMode(true);
+      process.stdin.resume();
+      resolve({ code, signal: signal ?? null });
+    });
+
+    child.on("error", () => {
+      if (process.stdin.isTTY) process.stdin.setRawMode(true);
+      process.stdin.resume();
+      resolve({ code: -1, signal: null });
+    });
+  });
+}

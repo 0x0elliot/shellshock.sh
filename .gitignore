@@ -1,0 +1,14 @@
+node_modules/
+dist/
+
+# SQLite databases
+*.db
+*.db-wal
+*.db-shm
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
