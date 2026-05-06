@@ -416,48 +416,71 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
 
     const request = interactiveRun.request;
 
+    // Take over terminal from Ink: save its listeners and remove them
+    const savedDataListeners = process.stdin.rawListeners("data").slice();
+    const savedKeypressListeners = process.stdin.rawListeners("keypress").slice();
+    process.stdin.removeAllListeners("data");
+    process.stdin.removeAllListeners("keypress");
+
+    // Disable mouse tracking (Ink may have enabled it), exit alt screen
+    process.stdout.write("\x1b[?1003l\x1b[?1006l\x1b[?1002l\x1b[?1000l");
     process.stdout.write("\x1B[?1049l");
 
-    const handle = executePTY(
-      request.command,
-      request.cwd,
-      (data) => {
-        process.stdout.write(data);
-        const cleaned = stripAnsi(data);
-        if (cleaned) {
-          postToServer({ type: "command_output", id: request.id, stream: "stdout", data: cleaned });
-        }
-      },
-      (code, signal) => {
-        stdinHandler && process.stdin.off("data", stdinHandler);
-        process.stdout.write("\x1B[?1049h");
-        ptyRef.current = null;
+    // Drain any pending terminal query responses
+    const drainTimeout = setTimeout(() => startPty(), 50);
+    let stdinHandler: ((data: Buffer) => void) | null = null;
+    let handle: PTYHandle | null = null;
 
-        setCommands((prev) =>
-          prev.map((c) =>
-            c.id === request.id
-              ? { ...c, status: (code === 0 ? "completed" : "failed") as "completed" | "failed", exitCode: code }
-              : c,
-          ),
-        );
+    function startPty() {
+      handle = executePTY(
+        request.command,
+        request.cwd,
+        (data) => {
+          process.stdout.write(data);
+          const cleaned = stripAnsi(data);
+          if (cleaned) {
+            postToServer({ type: "command_output", id: request.id, stream: "stdout", data: cleaned });
+          }
+        },
+        (code, signal) => {
+          cleanup();
+          setCommands((prev) =>
+            prev.map((c) =>
+              c.id === request.id
+                ? { ...c, status: (code === 0 ? "completed" : "failed") as "completed" | "failed", exitCode: code }
+                : c,
+            ),
+          );
+          postToServer({ type: "command_exit", id: request.id, exitCode: code, signal });
+          setInteractiveRun(null);
+        },
+      );
 
-        postToServer({ type: "command_exit", id: request.id, exitCode: code, signal });
-        setInteractiveRun(null);
-      },
-    );
+      ptyRef.current = handle;
 
-    ptyRef.current = handle;
+      stdinHandler = (data: Buffer) => {
+        handle?.write(data.toString());
+      };
+      process.stdin.on("data", stdinHandler);
+    }
 
-    const stdinHandler = (data: Buffer) => {
-      handle.write(data.toString());
-    };
-    process.stdin.on("data", stdinHandler);
+    function cleanup() {
+      if (stdinHandler) process.stdin.off("data", stdinHandler);
+      process.stdout.write("\x1B[?1049h");
+      ptyRef.current = null;
+
+      // Restore Ink's listeners
+      process.stdin.removeAllListeners("data");
+      process.stdin.removeAllListeners("keypress");
+      for (const l of savedDataListeners) process.stdin.on("data", l as (...args: unknown[]) => void);
+      for (const l of savedKeypressListeners) process.stdin.on("keypress", l as (...args: unknown[]) => void);
+    }
 
     return () => {
-      process.stdin.off("data", stdinHandler);
-      if (ptyRef.current === handle) {
+      clearTimeout(drainTimeout);
+      if (handle) {
+        cleanup();
         handle.kill();
-        ptyRef.current = null;
       }
     };
   }, [interactiveRun, postToServer]);
