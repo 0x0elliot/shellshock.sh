@@ -326,6 +326,12 @@ export class SessionManager extends EventEmitter {
     });
   }
 
+  killRunningCommand(sessionId: string, commandId: string): void {
+    dbOps.updateCommandStatus(commandId, "cancelled");
+    this.sendToClient(sessionId, { type: "command_cancel", id: commandId });
+    this.emit("commandCancelled", sessionId, commandId);
+  }
+
   getLastPendingCommandId(sessionId: string): string | null {
     const session = this.sessions.get(sessionId);
     if (!session) return null;

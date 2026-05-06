@@ -397,6 +397,10 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
           if (current && current.id === msg.id) return null;
           return current;
         });
+        setInteractiveRun((current) => {
+          if (current && current.request.id === msg.id) return null;
+          return current;
+        });
         setCommandQueue((prev) => prev.filter((r) => r.id !== msg.id));
         setCommands((prev) =>
           prev.map((c) =>

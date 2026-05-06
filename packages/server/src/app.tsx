@@ -62,8 +62,11 @@ export function App({ sessionManager, host, port }: AppProps) {
       refreshSessions();
     }
 
-    function onClientDisconnected(_sessionId: string, _reason: string) {
+    function onClientDisconnected(sid: string, _reason: string) {
       refreshSessions();
+      setInteractiveSession((prev) =>
+        prev && prev.sessionId === sid ? null : prev
+      );
     }
 
     function onHandshakeComplete(_sessionId: string) {
@@ -247,8 +250,12 @@ export function App({ sessionManager, host, port }: AppProps) {
   useInput((input, key) => {
     if (!engineerInteractive || !interactiveSession) return;
 
-    // Ctrl+] exits interactive mode
+    // Ctrl+] exits interactive mode and kills the running command
     if (key.ctrl && input === "]") {
+      sessionManager.killRunningCommand(
+        interactiveSession.sessionId,
+        interactiveSession.commandId,
+      );
       setInteractiveSession(null);
       return;
     }
@@ -335,8 +342,14 @@ export function App({ sessionManager, host, port }: AppProps) {
       process.kill(process.pid, "SIGINT");
     }
 
-    // Escape cancels the last pending command
+    // Escape cancels interactive commands or the last pending command
     if (key.escape && activeSessionId) {
+      if (interactiveSession && interactiveSession.sessionId === activeSessionId) {
+        sessionManager.killRunningCommand(activeSessionId, interactiveSession.commandId);
+        setInteractiveSession(null);
+        return;
+      }
+
       const lastPending = sessionManager.getLastPendingCommandId(activeSessionId);
       if (lastPending) {
         sessionManager.cancelCommand(activeSessionId, lastPending);
@@ -489,7 +502,9 @@ export function App({ sessionManager, host, port }: AppProps) {
                 && interactiveSession.sessionId === activeSessionId ? (
               <Box paddingX={1}>
                 <Text color="#7dcfff" bold>INTERACTIVE</Text>
-                <Text color="#565f89">{" — client is in control"}</Text>
+                <Text color="#565f89">{" — client is in control. "}</Text>
+                <Text color="#e0af68" bold>Escape</Text>
+                <Text color="#565f89">{" to cancel"}</Text>
               </Box>
             ) : (
               <CommandInput
