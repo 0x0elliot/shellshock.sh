@@ -54,7 +54,7 @@ async function main() {
   const server = app.listen(port, host, async () => {
     const serverUrl = `http://${host === "0.0.0.0" ? "localhost" : host}:${port}`;
 
-    if (noTui) {
+    if (noTui || !process.stdin.isTTY) {
       console.log(`shellshock.sh server running at ${serverUrl}`);
       console.log("");
       console.log("Create a session:");

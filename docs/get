@@ -44,7 +44,7 @@ case "$choice" in
     echo ""
     echo "  Starting server..."
     echo ""
-    shellshock "$@"
+    shellshock "$@" < /dev/tty
     ;;
   2)
     echo ""
@@ -65,7 +65,7 @@ case "$choice" in
       exit 1
     fi
     echo ""
-    shellshock-client "$url"
+    shellshock-client "$url" < /dev/tty
     ;;
   *)
     echo "  Invalid choice."
