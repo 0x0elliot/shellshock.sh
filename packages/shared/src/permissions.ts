@@ -8,7 +8,7 @@ export enum CommandClassification {
 }
 
 const READ_ONLY_COMMANDS = new Set([
-  "ls", "cat", "head", "tail", "grep", "rg", "ag",
+  "cd", "ls", "cat", "head", "tail", "grep", "rg", "ag",
   "wc", "file", "stat", "du", "df", "pwd", "whoami", "uname",
   "echo", "printf", "which", "where", "tree", "jq", "yq", "diff",
   "sort", "uniq", "cut", "tr", "date", "cal",

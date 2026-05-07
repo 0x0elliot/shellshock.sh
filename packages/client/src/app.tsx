@@ -131,11 +131,44 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
 
   const startExecution = useCallback(
     (request: CommandRequest) => {
+      const effectiveCwd = request.cwd || cwdRef.current;
+
+      const cdMatch = request.command.match(/^\s*cd(?:\s+(.*))?\s*$/);
+      if (cdMatch) {
+        const target = (cdMatch[1] || "").trim().replace(/^["']|["']$/g, "") || process.env.HOME || "/";
+        const resolved = target === "~"
+          ? (process.env.HOME || "/")
+          : path.resolve(effectiveCwd, target.replace(/^~\//, (process.env.HOME || "") + "/"));
+        try {
+          const stat = fs.statSync(resolved);
+          if (!stat.isDirectory()) throw new Error("Not a directory");
+          cwdRef.current = resolved;
+          const data = `${resolved}\n`;
+          pushOutput(request.id, data);
+          postToServer({ type: "command_output", id: request.id, stream: "stdout", data });
+          setCommands((prev) =>
+            prev.map((c) =>
+              c.id === request.id ? { ...c, status: "completed" as const, exitCode: 0 } : c,
+            ),
+          );
+          postToServer({ type: "command_exit", id: request.id, exitCode: 0, signal: null });
+        } catch (err) {
+          const errMsg = `cd: ${target}: ${err instanceof Error ? err.message : "No such file or directory"}\n`;
+          pushOutput(request.id, errMsg);
+          postToServer({ type: "command_output", id: request.id, stream: "stderr", data: errMsg });
+          setCommands((prev) =>
+            prev.map((c) =>
+              c.id === request.id ? { ...c, status: "failed" as const, exitCode: 1 } : c,
+            ),
+          );
+          postToServer({ type: "command_exit", id: request.id, exitCode: 1, signal: null });
+        }
+        return;
+      }
+
       setCommands((prev) =>
         prev.map((c) => (c.id === request.id ? { ...c, status: "running" as const } : c)),
       );
-
-      const effectiveCwd = request.cwd || cwdRef.current;
 
       const handle = executeCommand(
         request.command,
@@ -308,36 +341,6 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
 
   const processRequest = useCallback(
     (request: CommandRequest) => {
-      const cdMatch = request.command.match(/^\s*cd(?:\s+(.*?))?\s*$/);
-      if (cdMatch && !/[;&|`$(){}]/.test(cdMatch[1] || "")) {
-        const target = (cdMatch[1] || "").replace(/^["']|["']$/g, "") || process.env.HOME || "/";
-        const resolved = target === "~"
-          ? (process.env.HOME || "/")
-          : path.resolve(cwdRef.current, target.replace(/^~\//, (process.env.HOME || "") + "/"));
-        try {
-          const stat = fs.statSync(resolved);
-          if (!stat.isDirectory()) throw new Error("Not a directory");
-          cwdRef.current = resolved;
-          const data = `${resolved}\n`;
-          setCommands((prev) => [
-            ...prev,
-            { id: request.id, command: request.command, status: "completed" as const, classification: CommandClassification.ReadOnly, exitCode: 0, output: data },
-          ]);
-          postToServer({ type: "command_approved", id: request.id });
-          postToServer({ type: "command_output", id: request.id, stream: "stdout", data });
-          postToServer({ type: "command_exit", id: request.id, exitCode: 0, signal: null });
-        } catch (err) {
-          const errMsg = `cd: ${target}: ${err instanceof Error ? err.message : "No such file or directory"}\n`;
-          setCommands((prev) => [
-            ...prev,
-            { id: request.id, command: request.command, status: "failed" as const, classification: CommandClassification.ReadOnly, exitCode: 1, output: errMsg },
-          ]);
-          postToServer({ type: "command_output", id: request.id, stream: "stderr", data: errMsg });
-          postToServer({ type: "command_exit", id: request.id, exitCode: 1, signal: null });
-        }
-        return;
-      }
-
       const classification = request.interactive
         ? CommandClassification.Interactive
         : classifyCommand(request.command);
