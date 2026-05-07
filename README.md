@@ -1,10 +1,10 @@
 # shellshock.sh
 
-Remote debugging and secure secret sharing over the terminal.
+Remote debugging and secret sharing over the terminal. Nothing runs without a yes, nothing leaks in transit.
 
-**Remote debugging** — a support engineer can securely request shell commands on a customer's machine. Every command requires explicit customer approval through a terminal UI — no command runs without consent.
+**Remote debugging**: a support engineer can securely request shell commands on a customer's machine. Every command requires explicit customer approval through a terminal UI.
 
-**Secret sharing** — share API keys, tokens, and credentials end-to-end encrypted. The decryption key never reaches the server — even over ngrok, the middleman can't read your secrets. Burns after first retrieval.
+**Secret sharing**: share API keys, tokens, and credentials end-to-end encrypted. The decryption key never reaches the server, so even over ngrok, the middleman can't read your secrets. Burns after first retrieval.
 
 ## How It Works
 
