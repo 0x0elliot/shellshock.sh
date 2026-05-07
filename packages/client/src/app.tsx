@@ -309,7 +309,7 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
   const processRequest = useCallback(
     (request: CommandRequest) => {
       const cdMatch = request.command.match(/^\s*cd(?:\s+(.*?))?\s*$/);
-      if (cdMatch) {
+      if (cdMatch && !/[;&|`$(){}]/.test(cdMatch[1] || "")) {
         const target = (cdMatch[1] || "").replace(/^["']|["']$/g, "") || process.env.HOME || "/";
         const resolved = target === "~"
           ? (process.env.HOME || "/")

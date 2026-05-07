@@ -138,10 +138,14 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
       setHandshakeComplete(true);
     }
 
+    const isTerminal = (s: string) => s === "completed" || s === "failed" || s === "denied";
+
     function onCommandApproved(_sid: string, commandId: string) {
       setCommands((prev) =>
         prev.map((cmd) =>
-          cmd.id === commandId ? { ...cmd, status: "running" as const } : cmd,
+          cmd.id === commandId && !isTerminal(cmd.status)
+            ? { ...cmd, status: "running" as const }
+            : cmd,
         ),
       );
     }
@@ -149,7 +153,7 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
     function onCommandDenied(_sid: string, commandId: string, reason?: string) {
       setCommands((prev) =>
         prev.map((cmd) =>
-          cmd.id === commandId
+          cmd.id === commandId && !isTerminal(cmd.status)
             ? { ...cmd, status: "denied" as const, deniedReason: reason }
             : cmd,
         ),
