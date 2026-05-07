@@ -1,0 +1,52 @@
+#!/bin/bash
+set -e
+
+echo ""
+echo "  shellshock.sh — share a secret"
+echo "  ──────────────────────────────"
+echo ""
+
+if ! command -v node &>/dev/null; then
+  echo "  Node.js is required but not installed."
+  echo ""
+  echo "  Install it from https://nodejs.org"
+  echo "  or via your package manager:"
+  echo ""
+  echo "    brew install node        # macOS"
+  echo "    sudo apt install nodejs  # Debian/Ubuntu"
+  echo "    sudo dnf install nodejs  # Fedora"
+  echo ""
+  exit 1
+fi
+
+if ! command -v npx &>/dev/null; then
+  echo "  npx is required but not found."
+  echo "  It ships with npm — reinstall Node.js from https://nodejs.org"
+  echo ""
+  exit 1
+fi
+
+echo "  Installing shellshock.sh@nightly..."
+npm install -g shellshock.sh@nightly
+
+USE_NGROK=""
+if command -v ngrok &>/dev/null; then
+  echo ""
+  printf "  ngrok detected — start a public tunnel? [Y/n]: "
+  read -r yn < /dev/tty
+  case "$yn" in
+    [nN]*) ;;
+    *) USE_NGROK=1 ;;
+  esac
+fi
+
+echo ""
+echo "  Starting server..."
+echo "  Press Ctrl+S to share a secret once the TUI loads."
+echo ""
+
+if [ -n "$USE_NGROK" ]; then
+  shellshock < /dev/tty
+else
+  shellshock --no-tunnel < /dev/tty
+fi

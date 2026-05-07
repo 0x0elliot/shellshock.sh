@@ -207,7 +207,7 @@
  /___/_//_/\__/ /_/_/___/_//_/\___/\__/_/_/\_\ /___/_//_/</div>
 
     <p class="tagline">
-      Remote debugging and <strong>secret sharing</strong> over the terminal.<br>
+      <strong>Remote debugging</strong> and <strong>secret sharing</strong> over the terminal.<br>
       Nothing runs without a yes. Nothing leaks in transit.
     </p>
 
@@ -233,13 +233,13 @@
           End-to-end encrypted. The server never sees the decryption key.
           Burns after first retrieval.
         </div>
-        <div class="cmd-row" onclick="copyCmd(this, 'npx shellshock.sh')" title="Click to copy">
+        <div class="cmd-row" onclick="copyCmd(this, 'curl -sL shellshock.sh/share | bash')" title="Click to copy">
           <div class="cmd-text">
-            <span class="prompt">$ </span><span class="bin">npx shellshock.sh</span>
+            <span class="prompt">$ </span><span class="bin">curl -sL shellshock.sh/share | bash</span>
           </div>
-          <button class="copy-btn" onclick="event.stopPropagation(); copyCmd(this.parentElement, 'npx shellshock.sh')">copy</button>
+          <button class="copy-btn" onclick="event.stopPropagation(); copyCmd(this.parentElement, 'curl -sL shellshock.sh/share | bash')">copy</button>
         </div>
-        <div class="mode-hint">then press <kbd>Ctrl+S</kbd> to share a secret</div>
+        <div class="mode-hint">press <kbd>Ctrl+S</kbd> once the TUI loads</div>
       </div>
 
     </div>
