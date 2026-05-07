@@ -168,15 +168,19 @@ export class SessionManager extends EventEmitter {
       );
       if (sessionKey.length !== 32) return false;
 
-      session.sessionKey = sessionKey;
       session.handshakeComplete = true;
       session.privateKey = null;
       session.nonce = null;
 
+      // Send handshake_complete BEFORE storing the session key —
+      // the client needs this unencrypted to learn the handshake succeeded
+      // and activate its own copy of the key.
       this.sendToClient(sessionId, {
         type: "handshake_complete",
         sessionId,
       });
+
+      session.sessionKey = sessionKey;
 
       this.sendToEngineer(sessionId, {
         type: "handshake_complete",
