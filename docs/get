@@ -50,10 +50,29 @@ case "$choice" in
     echo ""
     echo "  Installing shellshock.sh@nightly..."
     npm install -g shellshock.sh@nightly
-    echo ""
-    echo "  Starting server..."
-    echo ""
-    shellshock < /dev/tty
+
+    USE_NGROK=""
+    if command -v ngrok &>/dev/null; then
+      echo ""
+      printf "  ngrok detected — start a public tunnel? [Y/n]: "
+      read -r yn < /dev/tty
+      case "$yn" in
+        [nN]*) ;;
+        *) USE_NGROK=1 ;;
+      esac
+    fi
+
+    if [ -n "$USE_NGROK" ]; then
+      echo ""
+      echo "  Starting server + ngrok tunnel..."
+      echo ""
+      shellshock < /dev/tty
+    else
+      echo ""
+      echo "  Starting server..."
+      echo ""
+      shellshock --no-tunnel < /dev/tty
+    fi
     ;;
   2)
     echo ""
