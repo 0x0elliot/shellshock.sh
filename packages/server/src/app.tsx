@@ -12,6 +12,8 @@ import {
   type CommandEntry,
 } from "./components/output-stream.js";
 import { CommandInput } from "./components/command-input.js";
+import { SecretSharePanel } from "./components/secret-share.js";
+import type { SecretStore } from "./secret-store.js";
 import {
   classifyCommand,
   type ClientInfo,
@@ -19,6 +21,7 @@ import {
 
 interface AppProps {
   sessionManager: SessionManager;
+  secretStore: SecretStore;
   host: string;
   port: number;
   tunnelUrl?: string;
@@ -35,7 +38,7 @@ function sessionToInfo(session: ActiveSession): ActiveSessionInfo {
   };
 }
 
-export function App({ sessionManager, host, port, tunnelUrl }: AppProps) {
+export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppProps) {
   const { exit } = useApp();
 
   const [sessions, setSessions] = useState<ActiveSessionInfo[]>(() =>
@@ -53,6 +56,7 @@ export function App({ sessionManager, host, port, tunnelUrl }: AppProps) {
     commandId: string;
     mode: "client" | "engineer";
   } | null>(null);
+  const [showSecretPanel, setShowSecretPanel] = useState(false);
 
   const refreshSessions = useCallback(() => {
     setSessions(sessionManager.getActiveSessions().map(sessionToInfo));
@@ -317,12 +321,38 @@ export function App({ sessionManager, host, port, tunnelUrl }: AppProps) {
   useInput((input, key) => {
     if (engineerInteractive) return;
 
+    // Ctrl+C always works
+    if (input === "c" && key.ctrl) {
+      if (activeSessionId) {
+        setCommandsBySession((prev) => {
+          const next = new Map(prev);
+          const cmds = next.get(activeSessionId) ?? [];
+          for (const cmd of cmds) {
+            if (cmd.status === "running" || cmd.status === "approved"
+              || (cmd.status === "pending" && cmd.output)) {
+              sessionManager.killRunningCommand(activeSessionId, cmd.id);
+            }
+          }
+          return next;
+        });
+      }
+      exit();
+      process.kill(process.pid, "SIGINT");
+    }
+
+    if (showSecretPanel) return;
+
     if (notification) {
       setNotification(null);
       return;
     }
 
     // Ctrl-based shortcuts always work, even when typing
+    if (input === "s" && key.ctrl) {
+      setShowSecretPanel(true);
+      return;
+    }
+
     if (input === "n" && key.ctrl) {
       const { sessionId, token } = sessionManager.createSession();
       const base = tunnelUrl ?? `http://${host}:${port}`;
@@ -366,25 +396,6 @@ export function App({ sessionManager, host, port, tunnelUrl }: AppProps) {
 
     if (confirmClose) {
       setConfirmClose(false);
-    }
-
-    // Ctrl+C: kill all running commands in active session, then exit
-    if (input === "c" && key.ctrl) {
-      if (activeSessionId) {
-        setCommandsBySession((prev) => {
-          const next = new Map(prev);
-          const cmds = next.get(activeSessionId) ?? [];
-          for (const cmd of cmds) {
-            if (cmd.status === "running" || cmd.status === "approved"
-              || (cmd.status === "pending" && cmd.output)) {
-              sessionManager.killRunningCommand(activeSessionId, cmd.id);
-            }
-          }
-          return next;
-        });
-      }
-      exit();
-      process.kill(process.pid, "SIGINT");
     }
 
     // Escape: kill interactive, cancel pending, or kill ALL running commands
@@ -524,6 +535,13 @@ export function App({ sessionManager, host, port, tunnelUrl }: AppProps) {
           />
         </Box>
 
+        {showSecretPanel ? (
+          <SecretSharePanel
+            secretStore={secretStore}
+            baseUrl={tunnelUrl ?? `http://${host}:${port}`}
+            onClose={() => setShowSecretPanel(false)}
+          />
+        ) : (
         <Box flexDirection="column" flexGrow={1}>
           <Box flexGrow={1}>
             {connectUrl ? (
@@ -592,6 +610,7 @@ export function App({ sessionManager, host, port, tunnelUrl }: AppProps) {
             )}
           </Box>
         </Box>
+        )}
       </Box>
     </Box>
   );

@@ -34,6 +34,8 @@ export function StatusBar({ host, port, sessionCount, tunnelUrl }: StatusBarProp
         <Text dimColor>{" │ "}</Text>
         <Text dimColor>Ctrl+N</Text><Text color="#565f89"> new</Text>
         <Text dimColor>{" │ "}</Text>
+        <Text dimColor>Ctrl+S</Text><Text color="#565f89"> share</Text>
+        <Text dimColor>{" │ "}</Text>
         <Text dimColor>Ctrl+C</Text><Text color="#565f89"> quit</Text>
       </Text>
     </Box>

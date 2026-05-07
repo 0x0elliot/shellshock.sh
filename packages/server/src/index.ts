@@ -5,6 +5,7 @@ import { execSync, spawn, type ChildProcess } from "node:child_process";
 import http from "node:http";
 import { createServer } from "./http.js";
 import { SessionManager } from "./session-manager.js";
+import { SecretStore } from "./secret-store.js";
 
 const args = process.argv.slice(2);
 
@@ -105,7 +106,8 @@ async function main() {
   }
 
   const sessionManager = new SessionManager();
-  const app = createServer(sessionManager);
+  const secretStore = new SecretStore();
+  const app = createServer(sessionManager, secretStore);
 
   const server = app.listen(port, host, async () => {
     const localUrl = `http://${host === "0.0.0.0" ? "localhost" : host}:${port}`;
@@ -140,6 +142,7 @@ async function main() {
         render(
           React.createElement(App, {
             sessionManager,
+            secretStore,
             host: displayHost,
             port: Number(displayPort),
             tunnelUrl: tunnelUrl ?? undefined,

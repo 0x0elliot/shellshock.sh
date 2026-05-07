@@ -3,12 +3,13 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { dbOps } from "./db.js";
 import type { SessionManager } from "./session-manager.js";
+import type { SecretStore } from "./secret-store.js";
 import type { ClientToServerMessage } from "shellshock.sh-shared";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-export function createServer(sessionManager: SessionManager) {
+export function createServer(sessionManager: SessionManager, secretStore?: SecretStore) {
   const app = express();
 
   app.use(express.json());
@@ -163,6 +164,21 @@ export function createServer(sessionManager: SessionManager) {
 
     res.json({ commandId });
   });
+
+  // GET /s/:authId — retrieve encrypted secret (memory-only, burn after reading)
+  if (secretStore) {
+    app.get("/s/:authId", (req, res) => {
+      const ip = req.ip || req.socket.remoteAddress || "unknown";
+      const blob = secretStore.retrieve(req.params.authId, ip);
+
+      if (!blob) {
+        res.status(404).type("text").send("Not found or already retrieved.\n");
+        return;
+      }
+
+      res.type("text").send(blob);
+    });
+  }
 
   // GET /session/:id — serve web terminal
   app.get("/session/:id", (_req, res) => {
