@@ -39,8 +39,8 @@ read -r choice < /dev/tty
 case "$choice" in
   1)
     echo ""
-    echo "  Installing shellshock.sh..."
-    npm install -g shellshock.sh
+    echo "  Installing shellshock.sh@nightly..."
+    npm install -g shellshock.sh@nightly
     echo ""
     echo "  Starting server..."
     echo ""
@@ -48,8 +48,8 @@ case "$choice" in
     ;;
   2)
     echo ""
-    echo "  Installing shellshock-client..."
-    npm install -g shellshock-client
+    echo "  Installing shellshock-client@nightly..."
+    npm install -g shellshock-client@nightly
     echo ""
     echo "  You need a session URL from your engineer."
     echo "  Ask them to run:"

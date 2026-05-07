@@ -1,0 +1,52 @@
+name: Nightly
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - run: npm test --if-present
+
+      - name: Set nightly versions
+        run: |
+          NIGHTLY=$(date -u +%Y%m%d%H%M)
+          for pkg in packages/shared packages/server packages/client; do
+            BASE=$(node -p "require('./$pkg/package.json').version.replace(/-.*/, '')")
+            node -e "
+              const fs = require('fs');
+              const p = JSON.parse(fs.readFileSync('./$pkg/package.json'));
+              p.version = '${BASE}-nightly.${NIGHTLY}';
+              if (p.dependencies?.['shellshock.sh-shared']) {
+                p.dependencies['shellshock.sh-shared'] = '${BASE}-nightly.${NIGHTLY}';
+              }
+              fs.writeFileSync('./$pkg/package.json', JSON.stringify(p, null, 2) + '\n');
+            "
+          done
+
+      - run: npm publish --workspace=shellshock.sh-shared --access public --tag nightly
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - run: npm publish --workspace=shellshock.sh --access public --tag nightly
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - run: npm publish --workspace=shellshock-client --access public --tag nightly
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
