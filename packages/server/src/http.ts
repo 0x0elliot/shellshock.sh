@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { dbOps } from "./db.js";
 import type { SessionManager } from "./session-manager.js";
 import type { SecretStore } from "./secret-store.js";
-import type { ClientToServerMessage } from "shellshock.sh-shared";
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -133,9 +133,9 @@ export function createServer(sessionManager: SessionManager, secretStore?: Secre
   // POST /api/sessions/:id/respond — client response (requires token)
   app.post("/api/sessions/:id/respond", clientAuth, (req, res) => {
     const sessionId = req.params.id as string;
-    const msg = req.body as ClientToServerMessage;
+    const msg = req.body;
 
-    if (!msg || !msg.type) {
+    if (!msg || (!msg.type && !msg._enc)) {
       res.status(400).json({ error: "Invalid message" });
       return;
     }
