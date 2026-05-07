@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { execSync } from "node:child_process";
 import { Box, Text, useInput } from "ink";
 import { AnimatedSpinner } from "./animated-spinner.js";
@@ -228,7 +228,7 @@ export function SecretSharePanel({
 
   if (phase.type === "waiting") {
     const recipientCmd = `curl -sL shellshock.sh/secret | bash -s -- ${phase.fetchUrl} ${phase.entry.decryptKey}`;
-    const directCmd = `curl -s ${phase.fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass pass:${phase.entry.decryptKey}`;
+    const directCmd = `curl -s -H "ngrok-skip-browser-warning: 1" ${phase.fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass pass:${phase.entry.decryptKey}`;
 
     return (
       <Box flexDirection="column" flexGrow={1} paddingX={1}>

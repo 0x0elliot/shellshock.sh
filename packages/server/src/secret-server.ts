@@ -228,7 +228,7 @@ async function main() {
     console.log("  Or directly:");
     console.log("");
     console.log(
-      `    curl -s ${fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass pass:${decryptKey}`
+      `    curl -s -H "ngrok-skip-browser-warning: 1" ${fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass pass:${decryptKey}`
     );
     console.log("");
     console.log(
