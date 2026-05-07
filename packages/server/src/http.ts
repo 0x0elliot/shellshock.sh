@@ -2,7 +2,6 @@ import express from "express";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { dbOps } from "./db.js";
 import type { SessionManager } from "./session-manager.js";
 import type { SecretStore } from "./secret-store.js";
 
@@ -70,8 +69,7 @@ export function createServer(sessionManager: SessionManager, secretStore?: Secre
     }
 
     const sessionId = req.params.id as string;
-    const row = dbOps.getSessionByToken(token);
-    if (!row || row.id !== sessionId) {
+    if (!sessionManager.validateToken(sessionId, token)) {
       res.status(403).json({ error: "Invalid token" });
       return;
     }

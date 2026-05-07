@@ -43,7 +43,6 @@
   "homepage": "https://github.com/0x0elliot/shellshock.sh",
   "dependencies": {
     "shellshock.sh-shared": "^0.1.1",
-    "better-sqlite3": "^11.0.0",
     "express": "^4.21.0",
     "ink": "^5.1.0",
     "ink-spinner": "^5.0.0",
@@ -52,7 +51,6 @@
     "react": "^18.3.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.0",
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.0",

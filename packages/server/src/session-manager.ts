@@ -2,7 +2,6 @@ import { EventEmitter } from "node:events";
 import crypto from "node:crypto";
 import { nanoid } from "nanoid";
 import type { Response } from "express";
-import { dbOps } from "./db.js";
 import {
   encryptMessage,
   decryptMessage,
@@ -73,26 +72,6 @@ export class SessionManager extends EventEmitter {
 
   constructor() {
     super();
-
-    const rows = dbOps.listActiveSessions();
-    for (const row of rows) {
-      const session = createEmptySession(
-        row.id,
-        row.token,
-        row.label,
-        new Date(row.created_at)
-      );
-      if (row.client_hostname) {
-        session.clientInfo = {
-          type: "client_info",
-          hostname: row.client_hostname,
-          platform: row.client_platform ?? "unknown",
-          username: row.client_username ?? "unknown",
-        };
-      }
-      this.sessions.set(row.id, session);
-    }
-
     this.reaperInterval = setInterval(() => this.reapExpiredSessions(), 30_000);
   }
 
@@ -114,8 +93,6 @@ export class SessionManager extends EventEmitter {
   createSession(label?: string): { sessionId: string; token: string } {
     const sessionId = nanoid(12);
     const token = nanoid(32);
-
-    dbOps.createSession(sessionId, token, label);
 
     const session = createEmptySession(sessionId, token, label ?? null, new Date());
     this.sessions.set(sessionId, session);
@@ -205,8 +182,7 @@ export class SessionManager extends EventEmitter {
     const session = this.sessions.get(sessionId);
     if (!session) return false;
 
-    const row = dbOps.getSessionByToken(token);
-    if (!row || row.id !== sessionId) return false;
+    if (session.token !== token) return false;
 
     if (session.clientSSE) {
       res.writeHead(409, { "Content-Type": "application/json" });
@@ -310,8 +286,6 @@ export class SessionManager extends EventEmitter {
 
     const commandId = nanoid(12);
 
-    dbOps.createCommand(commandId, sessionId, command);
-
     const request: CommandRequest = {
       type: "command_request",
       id: commandId,
@@ -335,7 +309,6 @@ export class SessionManager extends EventEmitter {
     if (!session.pendingCommands.has(commandId)) return false;
 
     session.pendingCommands.delete(commandId);
-    dbOps.updateCommandStatus(commandId, "cancelled");
 
     this.sendToClient(sessionId, { type: "command_cancel", id: commandId });
     this.sendToEngineer(sessionId, { type: "command_cancel", id: commandId });
@@ -362,7 +335,6 @@ export class SessionManager extends EventEmitter {
   }
 
   killRunningCommand(sessionId: string, commandId: string): void {
-    dbOps.updateCommandStatus(commandId, "cancelled");
     this.sendToClient(sessionId, { type: "command_cancel", id: commandId });
     this.emit("commandCancelled", sessionId, commandId);
   }
@@ -414,7 +386,6 @@ export class SessionManager extends EventEmitter {
 
       case "client_info": {
         session.clientInfo = msg;
-        dbOps.setClientInfo(sessionId, msg.hostname, msg.platform, msg.username);
 
         this.sendToEngineer(sessionId, {
           type: "client_connected",
@@ -427,7 +398,6 @@ export class SessionManager extends EventEmitter {
 
       case "command_approved": {
         session.pendingCommands.delete(msg.id);
-        dbOps.updateCommandStatus(msg.id, "approved");
 
         this.sendToEngineer(sessionId, msg);
         this.emit("commandApproved", sessionId, msg.id);
@@ -436,7 +406,6 @@ export class SessionManager extends EventEmitter {
 
       case "command_denied": {
         session.pendingCommands.delete(msg.id);
-        dbOps.updateCommandStatus(msg.id, "denied");
 
         this.sendToEngineer(sessionId, msg);
         this.emit("commandDenied", sessionId, msg.id, msg.reason);
@@ -444,16 +413,12 @@ export class SessionManager extends EventEmitter {
       }
 
       case "command_output": {
-        dbOps.appendCommandOutput(msg.id, msg.data);
-
         this.sendToEngineer(sessionId, msg);
         this.emit("commandOutput", sessionId, msg.id, msg.stream, msg.data);
         break;
       }
 
       case "command_exit": {
-        dbOps.updateCommandExit(msg.id, msg.exitCode, msg.signal);
-
         this.sendToEngineer(sessionId, msg);
         this.emit(
           "commandExit",
@@ -523,6 +488,11 @@ export class SessionManager extends EventEmitter {
     return this.sessions.get(sessionId);
   }
 
+  validateToken(sessionId: string, token: string): boolean {
+    const session = this.sessions.get(sessionId);
+    return session?.token === token;
+  }
+
   closeSession(sessionId: string): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
@@ -539,7 +509,6 @@ export class SessionManager extends EventEmitter {
     }
 
     session.sessionKey = null;
-    dbOps.closeSession(sessionId);
     this.sessions.delete(sessionId);
   }
 
