@@ -5,10 +5,11 @@ interface StatusBarProps {
   host: string;
   port: number;
   sessionCount: number;
+  tunnelUrl?: string;
 }
 
-export function StatusBar({ host, port, sessionCount }: StatusBarProps) {
-  const url = `http://${host}:${port}`;
+export function StatusBar({ host, port, sessionCount, tunnelUrl }: StatusBarProps) {
+  const url = tunnelUrl ?? `http://${host}:${port}`;
 
   return (
     <Box
@@ -20,21 +21,18 @@ export function StatusBar({ host, port, sessionCount }: StatusBarProps) {
     >
       <Text>
         <Text color="#7aa2f7" bold>{"⟡ "}</Text>
-        <Text color="#c0caf5" bold>Remote Debugger</Text>
+        <Text color="#c0caf5" bold>shellshock.sh</Text>
       </Text>
       <Text>
         <Text dimColor>{"│ "}</Text>
-        <Text color="#9ece6a">{url}</Text>
+        <Text color={tunnelUrl ? "#9ece6a" : "#e0af68"}>{url}</Text>
+        {tunnelUrl && <Text color="#9ece6a" bold>{" ⇡"}</Text>}
         <Text dimColor>{" │ "}</Text>
         <Text color={sessionCount > 0 ? "#e0af68" : "#565f89"}>
           {sessionCount} session{sessionCount !== 1 ? "s" : ""}
         </Text>
         <Text dimColor>{" │ "}</Text>
-        <Text dimColor>[↑↓]</Text><Text color="#565f89"> switch</Text>
-        <Text dimColor>{" │ "}</Text>
         <Text dimColor>Ctrl+N</Text><Text color="#565f89"> new</Text>
-        <Text dimColor>{" │ "}</Text>
-        <Text dimColor>Ctrl+D</Text><Text color="#565f89"> close</Text>
         <Text dimColor>{" │ "}</Text>
         <Text dimColor>Ctrl+C</Text><Text color="#565f89"> quit</Text>
       </Text>

@@ -21,6 +21,7 @@ interface AppProps {
   sessionManager: SessionManager;
   host: string;
   port: number;
+  tunnelUrl?: string;
 }
 
 function sessionToInfo(session: ActiveSession): ActiveSessionInfo {
@@ -34,7 +35,7 @@ function sessionToInfo(session: ActiveSession): ActiveSessionInfo {
   };
 }
 
-export function App({ sessionManager, host, port }: AppProps) {
+export function App({ sessionManager, host, port, tunnelUrl }: AppProps) {
   const { exit } = useApp();
 
   const [sessions, setSessions] = useState<ActiveSessionInfo[]>(() =>
@@ -243,7 +244,8 @@ export function App({ sessionManager, host, port }: AppProps) {
   if (activeSession && !activeSession.connected) {
     const raw = sessionManager.getSession(activeSessionId);
     if (raw) {
-      connectUrl = `http://${host}:${port}/session/${raw.id}?token=${raw.token}`;
+      const base = tunnelUrl ?? `http://${host}:${port}`;
+      connectUrl = `${base}/session/${raw.id}?token=${raw.token}`;
     }
   }
 
@@ -323,7 +325,8 @@ export function App({ sessionManager, host, port }: AppProps) {
     // Ctrl-based shortcuts always work, even when typing
     if (input === "n" && key.ctrl) {
       const { sessionId, token } = sessionManager.createSession();
-      const url = `http://${host}:${port}/session/${sessionId}?token=${token}`;
+      const base = tunnelUrl ?? `http://${host}:${port}`;
+      const url = `${base}/session/${sessionId}?token=${token}`;
 
       setCommandsBySession((prev) => {
         const next = new Map(prev);
@@ -479,7 +482,7 @@ export function App({ sessionManager, host, port }: AppProps) {
 
   return (
     <Box flexDirection="column" width="100%" height="100%">
-      <StatusBar host={host} port={port} sessionCount={sessions.length} />
+      <StatusBar host={host} port={port} sessionCount={sessions.length} tunnelUrl={tunnelUrl} />
 
       {notification && (
         <Box
