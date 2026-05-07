@@ -337,7 +337,8 @@ export function App({ sessionManager, host, port }: AppProps) {
       const idx = newSessions.findIndex((s) => s.id === sessionId);
       if (idx !== -1) setActiveIndex(idx);
 
-      copyToClipboard(`npx shellshock-client "${url}"`);
+      const clientCmd = `curl -sL shellshock.sh/get | bash -s -- "${url}"`;
+      copyToClipboard(clientCmd);
       setNotification(url);
       return;
     }
@@ -435,7 +436,7 @@ export function App({ sessionManager, host, port }: AppProps) {
     }
 
     if (input === "c" && connectUrl) {
-      copyToClipboard(`npx shellshock-client "${connectUrl}"`);
+      copyToClipboard(`curl -sL shellshock.sh/get | bash -s -- "${connectUrl}"`);
       return;
     }
 
@@ -526,7 +527,7 @@ export function App({ sessionManager, host, port }: AppProps) {
               <Box flexDirection="column" paddingX={2} paddingY={1}>
                 <Text color="#7aa2f7" bold>{"⟡ Share this with the customer:"}</Text>
                 <Text>{" "}</Text>
-                <Text color="#e0af68">{"  "}npx shellshock-client "{connectUrl}"</Text>
+                <Text color="#e0af68">{"  "}curl -sL shellshock.sh/get | bash -s -- "{connectUrl}"</Text>
                 <Text>{" "}</Text>
                 {copied ? (
                   <Text color="#9ece6a" bold>{"  "}✓ Copied to clipboard</Text>

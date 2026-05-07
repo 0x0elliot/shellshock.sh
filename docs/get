@@ -28,6 +28,15 @@ if ! command -v npx &>/dev/null; then
   exit 1
 fi
 
+# If a URL was passed, go straight to client mode
+if [ -n "$1" ] && echo "$1" | grep -qE "^https?://"; then
+  echo "  Installing shellshock-client@nightly..."
+  npm install -g shellshock-client@nightly
+  echo ""
+  shellshock-client "$1" < /dev/tty
+  exit 0
+fi
+
 echo "  What would you like to do?"
 echo ""
 echo "    1) Get remote access to someone's machine  (engineer)"
@@ -44,7 +53,7 @@ case "$choice" in
     echo ""
     echo "  Starting server..."
     echo ""
-    shellshock "$@" < /dev/tty
+    shellshock < /dev/tty
     ;;
   2)
     echo ""
