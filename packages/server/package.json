@@ -1,19 +1,14 @@
 {
   "name": "shellshock.sh",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Remote debugging server — securely request shell commands on a customer's machine with per-command approval",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
-  },
-  "publishConfig": {
-    "main": "./dist/index.js",
-    "types": "./dist/index.d.ts",
-    "exports": {
-      ".": {
-        "types": "./dist/index.d.ts",
-        "import": "./dist/index.js"
-      }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "bin": {
@@ -23,7 +18,7 @@
     "dist"
   ],
   "scripts": {
-    "dev": "tsx src/index.ts",
+    "dev": "npm run build -w shellshock.sh-shared && tsx src/index.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build"
@@ -46,7 +41,7 @@
   },
   "homepage": "https://github.com/0x0elliot/shellshock.sh",
   "dependencies": {
-    "shellshock.sh-shared": "0.1.0",
+    "shellshock.sh-shared": "^0.1.1",
     "better-sqlite3": "^11.0.0",
     "express": "^4.21.0",
     "ink": "^5.1.0",
