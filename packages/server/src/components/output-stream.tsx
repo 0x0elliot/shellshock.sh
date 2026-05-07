@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Box, Text } from "ink";
 import {
   type CommandClassification,
@@ -21,7 +21,7 @@ interface OutputStreamProps {
   maxHeight: number;
 }
 
-function CommandBlock({ entry, showOutput }: { entry: CommandEntry; showOutput: boolean }) {
+const CommandBlock = React.memo(function CommandBlock({ entry, showOutput }: { entry: CommandEntry; showOutput: boolean }) {
   const tagColor = classificationColor(entry.classification);
   const outputLines = showOutput
     ? (entry.output?.split("\n").filter(Boolean).slice(-20) ?? [])
@@ -67,9 +67,25 @@ function CommandBlock({ entry, showOutput }: { entry: CommandEntry; showOutput: 
       )}
     </Box>
   );
-}
+}, (prev, next) => {
+  return prev.entry.id === next.entry.id
+    && prev.entry.status === next.entry.status
+    && prev.entry.output === next.entry.output
+    && prev.entry.exitCode === next.entry.exitCode
+    && prev.showOutput === next.showOutput;
+});
 
 export function OutputStream({ commands, maxHeight }: OutputStreamProps) {
+  const visible = useMemo(
+    () => commands.slice(-maxHeight),
+    [commands, maxHeight],
+  );
+
+  const showOutputIds = useMemo(
+    () => new Set(visible.slice(-3).map((e) => e.id)),
+    [visible],
+  );
+
   if (commands.length === 0) {
     return (
       <Box flexDirection="column" paddingX={2} paddingY={1}>
@@ -82,19 +98,13 @@ export function OutputStream({ commands, maxHeight }: OutputStreamProps) {
     );
   }
 
-  // Show only recent commands, with output only for the last few
-  const visible = commands.slice(-maxHeight);
-  const showOutputFor = new Set(
-    visible.slice(-3).map((e) => e.id),
-  );
-
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1} overflowY="hidden">
       {visible.map((entry) => (
         <CommandBlock
           key={entry.id}
           entry={entry}
-          showOutput={showOutputFor.has(entry.id)}
+          showOutput={showOutputIds.has(entry.id)}
         />
       ))}
     </Box>

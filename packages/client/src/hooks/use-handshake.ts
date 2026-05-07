@@ -24,7 +24,10 @@ export function useHandshake(
     const url = `${serverBaseUrl}/api/sessions/${sessionId}/respond?token=${token}`;
     await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "1",
+      },
       body: JSON.stringify(msg),
     });
   }, [serverBaseUrl, sessionId, token]);

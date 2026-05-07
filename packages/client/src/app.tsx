@@ -12,6 +12,7 @@ import {
 import { useSSE } from "./hooks/use-sse.js";
 import { usePermissions } from "./hooks/use-permissions.js";
 import { useHandshake } from "./hooks/use-handshake.js";
+import { useOutputBuffer } from "./hooks/use-output-buffer.js";
 import { executeCommand, executePTY, executeInteractive, type PTYHandle } from "./executor.js";
 import { StatusBar } from "./components/status-bar.js";
 import { CommandLog, type CommandEntry } from "./components/command-log.js";
@@ -70,6 +71,20 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
   const killersRef = useRef<Map<string, () => void>>(new Map());
   const ptyRef = useRef<PTYHandle | null>(null);
 
+  const pushOutput = useOutputBuffer(
+    useCallback((merged: Map<string, string>) => {
+      setCommands((prev) => {
+        let next = prev;
+        for (const [cmdId, data] of merged) {
+          next = next.map((c) =>
+            c.id === cmdId ? { ...c, output: (c.output || "") + data } : c,
+          );
+        }
+        return next;
+      });
+    }, []),
+  );
+
   const isPromptActive = pendingPrompt !== null || pendingCompound !== null || interactiveChoice !== null;
 
   const postToServer = useCallback(
@@ -83,7 +98,10 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
         try {
           const res = await fetch(url, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "ngrok-skip-browser-warning": "1",
+            },
             body,
           });
           if (res.ok) return;
@@ -109,19 +127,11 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
         request.command,
         request.cwd,
         (data) => {
-          setCommands((prev) =>
-            prev.map((c) =>
-              c.id === request.id ? { ...c, output: (c.output || "") + data } : c,
-            ),
-          );
+          pushOutput(request.id, data);
           postToServer({ type: "command_output", id: request.id, stream: "stdout", data });
         },
         (data) => {
-          setCommands((prev) =>
-            prev.map((c) =>
-              c.id === request.id ? { ...c, output: (c.output || "") + data } : c,
-            ),
-          );
+          pushOutput(request.id, data);
           postToServer({ type: "command_output", id: request.id, stream: "stderr", data });
         },
         (code, signal) => {
@@ -143,7 +153,7 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
 
       killersRef.current.set(request.id, handle.kill);
     },
-    [postToServer],
+    [postToServer, pushOutput],
   );
 
   // --- Simple command handlers ---

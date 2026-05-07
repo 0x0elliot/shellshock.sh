@@ -50,7 +50,10 @@ export function useSSE(url: string): {
 
     const getter = url.startsWith("https") ? https.get : http.get;
     const req = getter(url, {
-      headers: { Accept: "text/event-stream" },
+      headers: {
+        Accept: "text/event-stream",
+        "ngrok-skip-browser-warning": "1",
+      },
     });
 
     requestRef.current = req;
@@ -82,6 +85,7 @@ export function useSSE(url: string): {
         const parts = buffer.split("\n\n");
         buffer = parts.pop() || "";
 
+        const batch: ServerToClientMessage[] = [];
         for (const part of parts) {
           const lines = part.split("\n");
           let data = "";
@@ -97,10 +101,13 @@ export function useSSE(url: string): {
           try {
             const msg: ServerToClientMessage = JSON.parse(data);
             if (msg.type === "heartbeat") continue;
-            setMessages((prev) => [...prev, msg]);
+            batch.push(msg);
           } catch {
             // Ignore malformed JSON
           }
+        }
+        if (batch.length > 0) {
+          setMessages((prev) => [...prev, ...batch]);
         }
       });
 

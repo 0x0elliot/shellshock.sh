@@ -1,12 +1,8 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { execSync } from "node:child_process";
 import { Box, Text, useInput, useApp } from "ink";
-import type { SessionManager, ActiveSession } from "./session-manager.js";
+import type { SessionManager } from "./session-manager.js";
 import { StatusBar } from "./components/status-bar.js";
-import {
-  SessionList,
-  type ActiveSessionInfo,
-} from "./components/session-list.js";
 import {
   OutputStream,
   type CommandEntry,
@@ -14,6 +10,7 @@ import {
 import { CommandInput } from "./components/command-input.js";
 import { SecretSharePanel } from "./components/secret-share.js";
 import type { SecretStore } from "./secret-store.js";
+import { useOutputBuffer } from "./hooks/use-output-buffer.js";
 import {
   classifyCommand,
   type ClientInfo,
@@ -27,100 +24,34 @@ interface AppProps {
   tunnelUrl?: string;
 }
 
-function sessionToInfo(session: ActiveSession): ActiveSessionInfo {
-  return {
-    id: session.id,
-    label: session.label,
-    clientInfo: session.clientInfo,
-    connected: session.clientSSE !== null,
-    handshakeComplete: session.handshakeComplete,
-    commandCount: session.pendingCommands.size,
-  };
-}
-
 export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppProps) {
   const { exit } = useApp();
 
-  const [sessions, setSessions] = useState<ActiveSessionInfo[]>(() =>
-    sessionManager.getActiveSessions().map(sessionToInfo)
-  );
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [commandsBySession, setCommandsBySession] = useState<
-    Map<string, CommandEntry[]>
-  >(new Map());
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
+  const [clientConnected, setClientConnected] = useState(false);
+  const [handshakeComplete, setHandshakeComplete] = useState(false);
+  const [clientInfo, setClientInfo] = useState<ClientInfo | null>(null);
+  const [commands, setCommands] = useState<CommandEntry[]>([]);
   const [notification, setNotification] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [confirmClose, setConfirmClose] = useState(false);
   const [interactiveSession, setInteractiveSession] = useState<{
-    sessionId: string;
     commandId: string;
     mode: "client" | "engineer";
   } | null>(null);
   const [showSecretPanel, setShowSecretPanel] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
 
-  const refreshSessions = useCallback(() => {
-    setSessions(sessionManager.getActiveSessions().map(sessionToInfo));
-  }, [sessionManager]);
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
 
-  useEffect(() => {
-    function onClientConnected(_sessionId: string, _clientInfo: ClientInfo) {
-      refreshSessions();
-    }
-
-    function onClientDisconnected(sid: string, _reason: string) {
-      refreshSessions();
-      setInteractiveSession((prev) =>
-        prev && prev.sessionId === sid ? null : prev
-      );
-    }
-
-    function onHandshakeComplete(_sessionId: string) {
-      refreshSessions();
-    }
-
-    function onSessionExpired(_sessionId: string) {
-      refreshSessions();
-    }
-
-    function onCommandApproved(_sessionId: string, commandId: string) {
-      setCommandsBySession((prev) => {
-        const next = new Map(prev);
-        for (const [sid, cmds] of next) {
-          next.set(sid, cmds.map((cmd) =>
-            cmd.id === commandId ? { ...cmd, status: "running" as const } : cmd
-          ));
-        }
-        return next;
-      });
-    }
-
-    function onCommandDenied(
-      _sessionId: string,
-      commandId: string,
-      reason?: string
-    ) {
-      setCommandsBySession((prev) => {
-        const next = new Map(prev);
-        for (const [sid, cmds] of next) {
-          next.set(sid, cmds.map((cmd) =>
-            cmd.id === commandId ? { ...cmd, status: "denied" as const, deniedReason: reason } : cmd
-          ));
-        }
-        return next;
-      });
-    }
-
-    function onCommandOutput(
-      _sessionId: string,
-      commandId: string,
-      _stream: string,
-      data: string
-    ) {
-      setCommandsBySession((prev) => {
-        const next = new Map(prev);
-        for (const [sid, cmds] of next) {
-          next.set(sid, cmds.map((cmd) =>
-            cmd.id === commandId
+  const pushOutput = useOutputBuffer(
+    useCallback((merged: Map<string, string>) => {
+      setCommands((prev) => {
+        let next = prev;
+        for (const [cmdId, data] of merged) {
+          next = next.map((cmd) =>
+            cmd.id === cmdId
               ? {
                   ...cmd,
                   output: (cmd.output ?? "") + data,
@@ -128,93 +59,13 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
                     ? "running" as const
                     : cmd.status,
                 }
-              : cmd
-          ));
+              : cmd,
+          );
         }
         return next;
       });
-    }
-
-    function onCommandExit(
-      _sessionId: string,
-      commandId: string,
-      exitCode: number | null,
-      _signal: string | null
-    ) {
-      setCommandsBySession((prev) => {
-        const next = new Map(prev);
-        for (const [sid, cmds] of next) {
-          next.set(sid, cmds.map((cmd) =>
-            cmd.id === commandId
-              ? {
-                  ...cmd,
-                  status: exitCode === 0 ? ("completed" as const) : ("failed" as const),
-                  exitCode,
-                }
-              : cmd
-          ));
-        }
-        return next;
-      });
-      setInteractiveSession((prev) =>
-        prev && prev.commandId === commandId ? null : prev
-      );
-    }
-
-    function onCommandCancelled(
-      _sessionId: string,
-      commandId: string
-    ) {
-      setCommandsBySession((prev) => {
-        const next = new Map(prev);
-        for (const [sid, cmds] of next) {
-          next.set(sid, cmds.map((cmd) =>
-            cmd.id === commandId
-              ? { ...cmd, status: "denied" as const, deniedReason: "Cancelled" }
-              : cmd
-          ));
-        }
-        return next;
-      });
-    }
-
-    function onInteractiveStarted(
-      sid: string,
-      commandId: string,
-      mode: "client" | "engineer"
-    ) {
-      setInteractiveSession({ sessionId: sid, commandId, mode });
-    }
-
-    sessionManager.on("clientConnected", onClientConnected);
-    sessionManager.on("clientDisconnected", onClientDisconnected);
-    sessionManager.on("handshakeComplete", onHandshakeComplete);
-    sessionManager.on("sessionExpired", onSessionExpired);
-    sessionManager.on("commandApproved", onCommandApproved);
-    sessionManager.on("commandDenied", onCommandDenied);
-    sessionManager.on("commandOutput", onCommandOutput);
-    sessionManager.on("commandExit", onCommandExit);
-    sessionManager.on("commandCancelled", onCommandCancelled);
-    sessionManager.on("interactiveStarted", onInteractiveStarted);
-
-    return () => {
-      sessionManager.off("clientConnected", onClientConnected);
-      sessionManager.off("clientDisconnected", onClientDisconnected);
-      sessionManager.off("handshakeComplete", onHandshakeComplete);
-      sessionManager.off("sessionExpired", onSessionExpired);
-      sessionManager.off("commandApproved", onCommandApproved);
-      sessionManager.off("commandDenied", onCommandDenied);
-      sessionManager.off("commandOutput", onCommandOutput);
-      sessionManager.off("commandExit", onCommandExit);
-      sessionManager.off("commandCancelled", onCommandCancelled);
-      sessionManager.off("interactiveStarted", onInteractiveStarted);
-    };
-  }, [sessionManager, refreshSessions]);
-
-  useEffect(() => {
-    const interval = setInterval(refreshSessions, 2000);
-    return () => clearInterval(interval);
-  }, [refreshSessions]);
+    }, []),
+  );
 
   const copyToClipboard = useCallback((text: string) => {
     const cmds: Record<string, string[]> = {
@@ -236,33 +87,147 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
     }
   }, []);
 
-  const activeSession = sessions[activeIndex] ?? null;
-  const activeSessionId = activeSession?.id ?? "";
-  const activeCommands = activeSessionId
-    ? commandsBySession.get(activeSessionId) ?? []
-    : [];
+  const createSession = useCallback(() => {
+    if (sessionIdRef.current) {
+      sessionManager.closeSession(sessionIdRef.current);
+    }
 
-  const canSendCommands = activeSession?.handshakeComplete === true;
+    const { sessionId: sid, token } = sessionManager.createSession();
+    const base = tunnelUrl ?? `http://${host}:${port}`;
+    const url = `${base}/session/${sid}?token=${token}`;
+    const clientCmd = `curl -sL shellshock.sh/get | bash -s -- "${url}"`;
+
+    setSessionId(sid);
+    setSessionToken(token);
+    setClientConnected(false);
+    setHandshakeComplete(false);
+    setClientInfo(null);
+    setCommands([]);
+    setInteractiveSession(null);
+
+    copyToClipboard(clientCmd);
+    setNotification(url);
+  }, [sessionManager, tunnelUrl, host, port, copyToClipboard]);
+
+  // Auto-create session on mount
+  useEffect(() => {
+    createSession();
+  }, [createSession]);
+
+  // Session manager events
+  useEffect(() => {
+    function onClientConnected(sid: string, info: ClientInfo) {
+      if (sid !== sessionIdRef.current) return;
+      setClientConnected(true);
+      setClientInfo(info);
+      setNotification(null);
+    }
+
+    function onClientDisconnected(sid: string) {
+      if (sid !== sessionIdRef.current) return;
+      setClientConnected(false);
+      setInteractiveSession(null);
+    }
+
+    function onHandshakeComplete(sid: string) {
+      if (sid !== sessionIdRef.current) return;
+      setHandshakeComplete(true);
+    }
+
+    function onCommandApproved(_sid: string, commandId: string) {
+      setCommands((prev) =>
+        prev.map((cmd) =>
+          cmd.id === commandId ? { ...cmd, status: "running" as const } : cmd,
+        ),
+      );
+    }
+
+    function onCommandDenied(_sid: string, commandId: string, reason?: string) {
+      setCommands((prev) =>
+        prev.map((cmd) =>
+          cmd.id === commandId
+            ? { ...cmd, status: "denied" as const, deniedReason: reason }
+            : cmd,
+        ),
+      );
+    }
+
+    function onCommandOutput(_sid: string, commandId: string, _stream: string, data: string) {
+      pushOutput(commandId, data);
+    }
+
+    function onCommandExit(_sid: string, commandId: string, exitCode: number | null) {
+      setCommands((prev) =>
+        prev.map((cmd) =>
+          cmd.id === commandId
+            ? {
+                ...cmd,
+                status: exitCode === 0 ? ("completed" as const) : ("failed" as const),
+                exitCode,
+              }
+            : cmd,
+        ),
+      );
+      setInteractiveSession((prev) =>
+        prev && prev.commandId === commandId ? null : prev,
+      );
+    }
+
+    function onCommandCancelled(_sid: string, commandId: string) {
+      setCommands((prev) =>
+        prev.map((cmd) =>
+          cmd.id === commandId
+            ? { ...cmd, status: "denied" as const, deniedReason: "Cancelled" }
+            : cmd,
+        ),
+      );
+    }
+
+    function onInteractiveStarted(sid: string, commandId: string, mode: "client" | "engineer") {
+      if (sid !== sessionIdRef.current) return;
+      setInteractiveSession({ commandId, mode });
+    }
+
+    sessionManager.on("clientConnected", onClientConnected);
+    sessionManager.on("clientDisconnected", onClientDisconnected);
+    sessionManager.on("handshakeComplete", onHandshakeComplete);
+    sessionManager.on("commandApproved", onCommandApproved);
+    sessionManager.on("commandDenied", onCommandDenied);
+    sessionManager.on("commandOutput", onCommandOutput);
+    sessionManager.on("commandExit", onCommandExit);
+    sessionManager.on("commandCancelled", onCommandCancelled);
+    sessionManager.on("interactiveStarted", onInteractiveStarted);
+
+    return () => {
+      sessionManager.off("clientConnected", onClientConnected);
+      sessionManager.off("clientDisconnected", onClientDisconnected);
+      sessionManager.off("handshakeComplete", onHandshakeComplete);
+      sessionManager.off("commandApproved", onCommandApproved);
+      sessionManager.off("commandDenied", onCommandDenied);
+      sessionManager.off("commandOutput", onCommandOutput);
+      sessionManager.off("commandExit", onCommandExit);
+      sessionManager.off("commandCancelled", onCommandCancelled);
+      sessionManager.off("interactiveStarted", onInteractiveStarted);
+    };
+  }, [sessionManager, pushOutput]);
+
+  const engineerInteractive = interactiveSession?.mode === "engineer";
+
+  const canSendCommands = handshakeComplete;
+  const inputIsActive = canSendCommands && !notification;
 
   let connectUrl: string | null = null;
-  if (activeSession && !activeSession.connected) {
-    const raw = sessionManager.getSession(activeSessionId);
-    if (raw) {
-      const base = tunnelUrl ?? `http://${host}:${port}`;
-      connectUrl = `${base}/session/${raw.id}?token=${raw.token}`;
-    }
+  if (sessionId && !clientConnected) {
+    const base = tunnelUrl ?? `http://${host}:${port}`;
+    connectUrl = `${base}/session/${sessionId}?token=${sessionToken}`;
   }
 
-  const engineerInteractive = interactiveSession?.mode === "engineer"
-    && interactiveSession.sessionId === activeSessionId;
-
-  const inputIsActive = canSendCommands && !notification && !engineerInteractive;
-
-  // Engineer-interactive terminal takeover — raw stdin/stdout, Ink suppressed
+  // Engineer-interactive terminal takeover
   useEffect(() => {
-    if (!engineerInteractive || !interactiveSession) return;
+    if (!engineerInteractive || !interactiveSession || !sessionId) return;
 
-    const { sessionId: sid, commandId: cid } = interactiveSession;
+    const { commandId: cid } = interactiveSession;
+    const sid = sessionId;
 
     const savedDataListeners = process.stdin.rawListeners("data").slice();
     const savedKeypressListeners = process.stdin.rawListeners("keypress").slice();
@@ -316,25 +281,19 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
       for (const l of savedDataListeners) process.stdin.on("data", l as (...args: unknown[]) => void);
       for (const l of savedKeypressListeners) process.stdin.on("keypress", l as (...args: unknown[]) => void);
     };
-  }, [engineerInteractive, interactiveSession, sessionManager]);
+  }, [engineerInteractive, interactiveSession, sessionManager, sessionId]);
 
   useInput((input, key) => {
     if (engineerInteractive) return;
 
-    // Ctrl+C always works
     if (input === "c" && key.ctrl) {
-      if (activeSessionId) {
-        setCommandsBySession((prev) => {
-          const next = new Map(prev);
-          const cmds = next.get(activeSessionId) ?? [];
-          for (const cmd of cmds) {
-            if (cmd.status === "running" || cmd.status === "approved"
-              || (cmd.status === "pending" && cmd.output)) {
-              sessionManager.killRunningCommand(activeSessionId, cmd.id);
-            }
+      if (sessionId) {
+        for (const cmd of commands) {
+          if (cmd.status === "running" || cmd.status === "approved"
+            || (cmd.status === "pending" && cmd.output)) {
+            sessionManager.killRunningCommand(sessionId, cmd.id);
           }
-          return next;
-        });
+        }
       }
       exit();
       process.kill(process.pid, "SIGINT");
@@ -347,128 +306,74 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
       return;
     }
 
-    // Ctrl-based shortcuts always work, even when typing
     if (input === "s" && key.ctrl) {
       setShowSecretPanel(true);
       return;
     }
 
     if (input === "n" && key.ctrl) {
-      const { sessionId, token } = sessionManager.createSession();
-      const base = tunnelUrl ?? `http://${host}:${port}`;
-      const url = `${base}/session/${sessionId}?token=${token}`;
-
-      setCommandsBySession((prev) => {
-        const next = new Map(prev);
-        next.set(sessionId, []);
-        return next;
-      });
-
-      refreshSessions();
-
-      const newSessions = sessionManager.getActiveSessions();
-      const idx = newSessions.findIndex((s) => s.id === sessionId);
-      if (idx !== -1) setActiveIndex(idx);
-
-      const clientCmd = `curl -sL shellshock.sh/get | bash -s -- "${url}"`;
-      copyToClipboard(clientCmd);
-      setNotification(url);
-      return;
-    }
-
-    if (input === "d" && key.ctrl && activeSessionId) {
-      if (confirmClose) {
-        sessionManager.closeSession(activeSessionId);
-        setCommandsBySession((prev) => {
-          const next = new Map(prev);
-          next.delete(activeSessionId);
-          return next;
-        });
-        refreshSessions();
-        setActiveIndex((prev) => Math.max(0, prev - 1));
-        setConfirmClose(false);
+      if (confirmReset || !clientConnected) {
+        createSession();
+        setConfirmReset(false);
       } else {
-        setConfirmClose(true);
-        setTimeout(() => setConfirmClose(false), 3000);
+        setConfirmReset(true);
+        setTimeout(() => setConfirmReset(false), 3000);
       }
       return;
     }
 
-    if (confirmClose) {
-      setConfirmClose(false);
+    if (confirmReset && !(input === "n" && key.ctrl)) {
+      setConfirmReset(false);
     }
 
-    // Escape: kill interactive, cancel pending, or kill ALL running commands
-    if (key.escape && activeSessionId) {
-      if (interactiveSession && interactiveSession.sessionId === activeSessionId) {
-        sessionManager.killRunningCommand(activeSessionId, interactiveSession.commandId);
+    if (key.escape && sessionId) {
+      if (interactiveSession) {
+        sessionManager.killRunningCommand(sessionId, interactiveSession.commandId);
         setInteractiveSession(null);
         return;
       }
 
-      const lastPending = sessionManager.getLastPendingCommandId(activeSessionId);
+      const lastPending = sessionManager.getLastPendingCommandId(sessionId);
       if (lastPending) {
-        sessionManager.cancelCommand(activeSessionId, lastPending);
-        setCommandsBySession((prev) => {
-          const next = new Map(prev);
-          const cmds = next.get(activeSessionId) ?? [];
-          next.set(activeSessionId, cmds.map((cmd) =>
-            cmd.id === lastPending ? { ...cmd, status: "denied" as const, deniedReason: "Cancelled by engineer" } : cmd
-          ));
-          return next;
-        });
+        sessionManager.cancelCommand(sessionId, lastPending);
+        setCommands((prev) =>
+          prev.map((cmd) =>
+            cmd.id === lastPending
+              ? { ...cmd, status: "denied" as const, deniedReason: "Cancelled by engineer" }
+              : cmd,
+          ),
+        );
         return;
       }
 
-      // Kill ALL running commands at once (avoids stale-closure issues with rapid presses)
-      setCommandsBySession((prev) => {
-        const next = new Map(prev);
-        const cmds = next.get(activeSessionId) ?? [];
+      setCommands((prev) => {
         let killed = false;
-        const updated = cmds.map((cmd) => {
+        const updated = prev.map((cmd) => {
           if (cmd.status === "running" || cmd.status === "approved"
             || (cmd.status === "pending" && cmd.output)) {
-            sessionManager.killRunningCommand(activeSessionId, cmd.id);
+            sessionManager.killRunningCommand(sessionId, cmd.id);
             killed = true;
             return { ...cmd, status: "denied" as const, deniedReason: "Cancelled by engineer" };
           }
           return cmd;
         });
-        if (killed) next.set(activeSessionId, updated);
-        return killed ? next : prev;
+        return killed ? updated : prev;
       });
       return;
     }
 
-    // Single-key shortcuts only when text input is NOT focused
     if (inputIsActive) return;
-
-    const num = parseInt(input, 10);
-    if (num >= 1 && num <= 9 && num <= sessions.length) {
-      setActiveIndex(num - 1);
-      return;
-    }
 
     if (input === "c" && connectUrl) {
       copyToClipboard(`curl -sL shellshock.sh/get | bash -s -- "${connectUrl}"`);
       return;
     }
-
-    if (key.upArrow && sessions.length > 1) {
-      setActiveIndex((prev) => (prev > 0 ? prev - 1 : sessions.length - 1));
-      return;
-    }
-
-    if (key.downArrow && sessions.length > 1) {
-      setActiveIndex((prev) => (prev < sessions.length - 1 ? prev + 1 : 0));
-      return;
-    }
   });
 
   function handleCommandSubmit(command: string) {
-    if (!activeSessionId || !canSendCommands) return;
+    if (!sessionId || !canSendCommands) return;
 
-    const commandId = sessionManager.requestCommand(activeSessionId, command);
+    const commandId = sessionManager.requestCommand(sessionId, command);
     if (!commandId) return;
 
     const classification = classifyCommand(command);
@@ -479,12 +384,7 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
       classification,
     };
 
-    setCommandsBySession((prev) => {
-      const next = new Map(prev);
-      const existing = next.get(activeSessionId) ?? [];
-      next.set(activeSessionId, [...existing, entry]);
-      return next;
-    });
+    setCommands((prev) => [...prev, entry]);
   }
 
   if (engineerInteractive) {
@@ -493,7 +393,14 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
 
   return (
     <Box flexDirection="column" width="100%" height="100%">
-      <StatusBar host={host} port={port} sessionCount={sessions.length} tunnelUrl={tunnelUrl} />
+      <StatusBar
+        host={host}
+        port={port}
+        tunnelUrl={tunnelUrl}
+        clientConnected={clientConnected}
+        handshakeComplete={handshakeComplete}
+        clientInfo={clientInfo}
+      />
 
       {notification && (
         <Box
@@ -505,7 +412,7 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
           marginX={1}
         >
           <Text color="#9ece6a" bold>
-            {"✓ "}Session created — link copied to clipboard
+            {"✓ "}Session created — link copied to clipboard{tunnelUrl ? " (via ngrok)" : ""}
           </Text>
           <Text>{" "}</Text>
           <Text color="#7dcfff" bold>
@@ -518,33 +425,16 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
         </Box>
       )}
 
-      <Box flexDirection="row" flexGrow={1}>
-        <Box
-          width="30%"
-          borderStyle="single"
-          borderColor="#3b4261"
-          borderRight={true}
-          borderTop={false}
-          borderBottom={false}
-          borderLeft={false}
-        >
-          <SessionList
-            sessions={sessions}
-            activeIndex={activeIndex}
-            onSelect={setActiveIndex}
-          />
-        </Box>
-
-        {showSecretPanel ? (
-          <SecretSharePanel
-            secretStore={secretStore}
-            baseUrl={tunnelUrl ?? `http://${host}:${port}`}
-            onClose={() => setShowSecretPanel(false)}
-          />
-        ) : (
+      {showSecretPanel ? (
+        <SecretSharePanel
+          secretStore={secretStore}
+          baseUrl={tunnelUrl ?? `http://${host}:${port}`}
+          onClose={() => setShowSecretPanel(false)}
+        />
+      ) : (
         <Box flexDirection="column" flexGrow={1}>
           <Box flexGrow={1}>
-            {connectUrl ? (
+            {connectUrl && !notification ? (
               <Box flexDirection="column" paddingX={2} paddingY={1}>
                 <Text color="#7aa2f7" bold>{"⟡ Share this with the customer:"}</Text>
                 <Text>{" "}</Text>
@@ -558,34 +448,28 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
                 <Text>{" "}</Text>
                 <Text color="#565f89" dimColor>{"  "}Waiting for client to connect...</Text>
               </Box>
-            ) : (
-              <OutputStream commands={activeCommands} maxHeight={20} />
-            )}
+            ) : !notification ? (
+              <OutputStream commands={commands} maxHeight={20} />
+            ) : null}
           </Box>
 
-          {confirmClose && (
+          {confirmReset && (
             <Box paddingX={2}>
-              <Text color="#f7768e" bold>Close session {activeSessionId.slice(0, 8)}? Press Ctrl+D again to confirm.</Text>
+              <Text color="#f7768e" bold>Reset session? Press Ctrl+N again to confirm.</Text>
             </Box>
           )}
 
           <Box
             borderStyle="single"
-            borderColor={engineerInteractive ? "#ff9e64" : "#3b4261"}
+            borderColor={
+              interactiveSession?.mode === "client" ? "#7dcfff" : "#3b4261"
+            }
             borderTop={true}
             borderBottom={false}
             borderLeft={false}
             borderRight={false}
           >
-            {engineerInteractive ? (
-              <Box paddingX={1}>
-                <Text color="#ff9e64" bold>INTERACTIVE</Text>
-                <Text color="#565f89">{" — typing goes to remote command. "}</Text>
-                <Text color="#e0af68" bold>Ctrl+]</Text>
-                <Text color="#565f89">{" to detach"}</Text>
-              </Box>
-            ) : interactiveSession?.mode === "client"
-                && interactiveSession.sessionId === activeSessionId ? (
+            {interactiveSession?.mode === "client" ? (
               <Box paddingX={1}>
                 <Text color="#7dcfff" bold>INTERACTIVE</Text>
                 <Text color="#565f89">{" — client is in control. "}</Text>
@@ -594,15 +478,15 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
               </Box>
             ) : (
               <CommandInput
-                sessionId={activeSessionId}
+                sessionId={sessionId ?? ""}
                 onSubmit={handleCommandSubmit}
-                disabled={!activeSession || !canSendCommands}
+                disabled={!sessionId || !canSendCommands}
                 disabledReason={
-                  !activeSession
-                    ? undefined
-                    : !activeSession.connected
+                  !sessionId
+                    ? "Creating session..."
+                    : !clientConnected
                       ? "Waiting for client to connect..."
-                      : !activeSession.handshakeComplete
+                      : !handshakeComplete
                         ? "Handshake in progress..."
                         : undefined
                 }
@@ -610,8 +494,7 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
             )}
           </Box>
         </Box>
-        )}
-      </Box>
+      )}
     </Box>
   );
 }

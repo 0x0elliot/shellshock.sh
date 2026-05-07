@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { Text } from "ink";
+import { useSpinnerTick } from "./use-spinner-tick.js";
 
 const SPINNER_FRAMES = ["✻", "✼", "✽", "✾", "✿", "❀", "❁", "❂", "❃", "❊"];
 const COLORS = ["#7aa2f7", "#bb9af7", "#7dcfff", "#9ece6a", "#e0af68", "#f7768e"];
@@ -9,16 +10,8 @@ interface AnimatedSpinnerProps {
   color?: string;
 }
 
-export function AnimatedSpinner({ label, color }: AnimatedSpinnerProps) {
-  const [frame, setFrame] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setFrame((f) => (f + 1) % SPINNER_FRAMES.length);
-    }, 120);
-    return () => clearInterval(interval);
-  }, []);
-
+export const AnimatedSpinner = React.memo(function AnimatedSpinner({ label, color }: AnimatedSpinnerProps) {
+  const frame = useSpinnerTick();
   const spinnerColor = color ?? COLORS[frame % COLORS.length];
 
   return (
@@ -27,4 +20,4 @@ export function AnimatedSpinner({ label, color }: AnimatedSpinnerProps) {
       {label && <Text color={spinnerColor}> {label}</Text>}
     </Text>
   );
-}
+});

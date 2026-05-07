@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Box, Text } from "ink";
 import {
   type CommandClassification,
@@ -27,7 +27,7 @@ interface CommandLogProps {
   maxHeight?: number;
 }
 
-function CommandRow({ entry }: { entry: CommandEntry }) {
+const CommandRow = React.memo(function CommandRow({ entry }: { entry: CommandEntry }) {
   const tagColor = classificationColor(entry.classification);
   const outputLines = entry.output?.split("\n").filter(Boolean).slice(0, 3);
 
@@ -73,13 +73,20 @@ function CommandRow({ entry }: { entry: CommandEntry }) {
       )}
     </Box>
   );
-}
+}, (prev, next) => {
+  return prev.entry.id === next.entry.id
+    && prev.entry.status === next.entry.status
+    && prev.entry.output === next.entry.output
+    && prev.entry.exitCode === next.entry.exitCode;
+});
 
 export function CommandLog({ commands, maxHeight = 20 }: CommandLogProps) {
-  const visible =
-    commands.length > maxHeight
+  const visible = useMemo(
+    () => commands.length > maxHeight
       ? commands.slice(commands.length - maxHeight)
-      : commands;
+      : commands,
+    [commands, maxHeight],
+  );
 
   if (commands.length === 0) {
     return (
