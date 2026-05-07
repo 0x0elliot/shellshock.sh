@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import fs from "node:fs";
+import path from "node:path";
 import { Box, Text, useInput, useApp } from "ink";
 import {
   type CommandRequest,
@@ -76,6 +78,7 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
   const ptyRef = useRef<PTYHandle | null>(null);
   const sessionKeyRef = useRef<Buffer | null>(null);
   sessionKeyRef.current = handshake.sessionKey;
+  const cwdRef = useRef(process.cwd());
 
   const pushOutput = useOutputBuffer(
     useCallback((merged: Map<string, string>) => {
@@ -128,13 +131,48 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
 
   const startExecution = useCallback(
     (request: CommandRequest) => {
+      const cdMatch = request.command.match(/^\s*cd\s+(.*?)\s*$/);
+      if (cdMatch) {
+        const target = cdMatch[1].replace(/^["']|["']$/g, "") || process.env.HOME || "/";
+        const resolved = target === "~"
+          ? (process.env.HOME || "/")
+          : path.resolve(cwdRef.current, target.replace(/^~\//, (process.env.HOME || "") + "/"));
+        try {
+          const stat = fs.statSync(resolved);
+          if (!stat.isDirectory()) throw new Error("Not a directory");
+          cwdRef.current = resolved;
+          const data = `${resolved}\n`;
+          pushOutput(request.id, data);
+          postToServer({ type: "command_output", id: request.id, stream: "stdout", data });
+          setCommands((prev) =>
+            prev.map((c) =>
+              c.id === request.id ? { ...c, status: "completed" as const, exitCode: 0 } : c,
+            ),
+          );
+          postToServer({ type: "command_exit", id: request.id, exitCode: 0, signal: null });
+        } catch (err) {
+          const msg = `cd: ${target}: ${err instanceof Error ? err.message : "No such file or directory"}\n`;
+          pushOutput(request.id, msg);
+          postToServer({ type: "command_output", id: request.id, stream: "stderr", data: msg });
+          setCommands((prev) =>
+            prev.map((c) =>
+              c.id === request.id ? { ...c, status: "failed" as const, exitCode: 1 } : c,
+            ),
+          );
+          postToServer({ type: "command_exit", id: request.id, exitCode: 1, signal: null });
+        }
+        return;
+      }
+
       setCommands((prev) =>
         prev.map((c) => (c.id === request.id ? { ...c, status: "running" as const } : c)),
       );
 
+      const effectiveCwd = request.cwd || cwdRef.current;
+
       const handle = executeCommand(
         request.command,
-        request.cwd,
+        effectiveCwd,
         (data) => {
           pushOutput(request.id, data);
           postToServer({ type: "command_output", id: request.id, stream: "stdout", data });
@@ -499,7 +537,7 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
     (async () => {
       const { code, signal } = await executeInteractive(
         request.command,
-        request.cwd,
+        request.cwd || cwdRef.current,
       );
 
       (process.stdout as any).write = rawStdoutWrite;
@@ -540,7 +578,7 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
 
     const handle = executePTY(
       request.command,
-      request.cwd,
+      request.cwd || cwdRef.current,
       (data) => {
         rawStdoutWrite(data);
         postToServer({ type: "interactive_output", id: request.id, data });
