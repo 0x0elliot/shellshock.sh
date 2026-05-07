@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>shellshock.sh</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", "Courier New", monospace;
+      background: #fff;
+      color: #1a1a1a;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .hero {
+      text-align: center;
+      max-width: 720px;
+    }
+
+    .ascii {
+      font-size: clamp(0.45rem, 1.8vw, 0.82rem);
+      line-height: 1.25;
+      white-space: pre;
+      color: #111;
+      margin-bottom: 2rem;
+      letter-spacing: 0.02em;
+      display: inline-block;
+      text-align: left;
+    }
+
+    .tagline {
+      font-size: 1.05rem;
+      color: #555;
+      margin-bottom: 2.5rem;
+      line-height: 1.6;
+      max-width: 520px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .tagline strong {
+      color: #1a1a1a;
+      font-weight: 600;
+    }
+
+    .cmd-block {
+      background: #fafafa;
+      border: 1px solid #e5e5e5;
+      border-radius: 6px;
+      padding: 1rem 1.5rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 2.5rem;
+      position: relative;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+
+    .cmd-block:hover {
+      border-color: #ccc;
+    }
+
+    .cmd-text {
+      font-size: 0.95rem;
+      color: #1a1a1a;
+      user-select: all;
+    }
+
+    .cmd-text .prompt { color: #999; }
+    .cmd-text .bin { color: #111; font-weight: 600; }
+
+    .copy-btn {
+      background: none;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 0.3rem 0.5rem;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.7rem;
+      color: #999;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    .copy-btn:hover {
+      border-color: #999;
+      color: #555;
+    }
+
+    .copy-btn.copied {
+      border-color: #1a1a1a;
+      color: #1a1a1a;
+    }
+
+    .flow {
+      font-size: 0.75rem;
+      color: #bbb;
+      line-height: 1.4;
+      white-space: pre;
+      margin-bottom: 2.5rem;
+      display: inline-block;
+      text-align: left;
+    }
+
+    .flow .highlight { color: #888; }
+
+    .links {
+      font-size: 0.85rem;
+      color: #999;
+    }
+
+    .links a {
+      color: #555;
+      text-decoration: none;
+      border-bottom: 1px solid #ddd;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .links a:hover {
+      color: #111;
+      border-color: #111;
+    }
+
+    .links .sep {
+      margin: 0 0.75rem;
+      color: #ddd;
+    }
+
+    @media (max-width: 520px) {
+      .ascii { font-size: 0.38rem; }
+      .cmd-block { padding: 0.8rem 1rem; gap: 0.75rem; }
+      .flow { font-size: 0.6rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="hero">
+
+    <div class="ascii">
+        __         ____     __              __
+   ___ / /  ___   / / /__ / /  ___  ____  / /__  ___ / /
+  (_-&lt;/ _ \/ -_) / / (_-&lt;/ _ \/ _ \/ __/ /  '_/ (_-&lt;/ _ \
+ /___/_//_/\__/ /_/_/___/_//_/\___/\__/_/_/\_\ /___/_//_/</div>
+
+    <p class="tagline">
+      Remote debug any machine.<br>
+      Every command needs <strong>explicit approval</strong>.<br>
+      Nothing runs without consent.
+    </p>
+
+    <div class="cmd-block" onclick="copyCmd(this)" title="Click to copy">
+      <div class="cmd-text">
+        <span class="prompt">$ </span><span class="bin">curl -sL shellshock.sh/get | bash</span>
+      </div>
+      <button class="copy-btn" onclick="event.stopPropagation(); copyCmd(this.parentElement)">copy</button>
+    </div>
+
+    <p class="links">
+      <a href="https://github.com/0x0elliot/shellshock.sh">github</a>
+      <span class="sep">/</span>
+      <a href="https://www.npmjs.com/package/shellshock.sh">npm</a>
+      <span class="sep">/</span>
+      <a href="https://github.com/0x0elliot/shellshock.sh#readme">docs</a>
+    </p>
+
+  </div>
+
+  <script>
+    function copyCmd(el) {
+      const text = 'curl -sL shellshock.sh/get | bash';
+      navigator.clipboard.writeText(text);
+      const btn = el.querySelector('.copy-btn');
+      btn.textContent = 'copied';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = 'copy';
+        btn.classList.remove('copied');
+      }, 2000);
+    }
+  </script>
+</body>
+</html>

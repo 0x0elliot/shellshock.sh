@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
-import type { PermissionRule } from "@remote-debugger/shared";
+import type { PermissionRule } from "shellshock.sh-shared";
 
 interface AllowlistViewProps {
   allowRules: PermissionRule[];

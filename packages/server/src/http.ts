@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { dbOps } from "./db.js";
 import type { SessionManager } from "./session-manager.js";
-import type { ClientToServerMessage } from "@remote-debugger/shared";
+import type { ClientToServerMessage } from "shellshock.sh-shared";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

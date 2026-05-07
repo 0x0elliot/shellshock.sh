@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import crypto from "node:crypto";
 import os from "node:os";
-import type { ServerToClientMessage, ClientToServerMessage } from "@remote-debugger/shared";
+import type { ServerToClientMessage, ClientToServerMessage } from "shellshock.sh-shared";
 
 export type HandshakeState = "waiting" | "verifying" | "complete" | "failed";
 

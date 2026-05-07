@@ -26,7 +26,7 @@ const server = app.listen(port, host, async () => {
 
   if (noTui) {
     // Headless mode
-    console.log(`Remote Debugger server running at ${serverUrl}`);
+    console.log(`shellshock.sh server running at ${serverUrl}`);
     console.log("");
     console.log("Create a session:");
     console.log(
@@ -52,7 +52,7 @@ const server = app.listen(port, host, async () => {
     } catch (err) {
       // Fallback to headless if ink fails
       console.error("Failed to start TUI, falling back to headless mode:", err);
-      console.log(`Remote Debugger server running at ${serverUrl}`);
+      console.log(`shellshock.sh server running at ${serverUrl}`);
       console.log("Press Ctrl+C to stop.");
     }
   }

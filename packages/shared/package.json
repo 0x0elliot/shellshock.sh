@@ -1,16 +1,44 @@
 {
-  "name": "@remote-debugger/shared",
+  "name": "shellshock.sh-shared",
   "version": "0.1.0",
+  "description": "Shared protocol types and command classification for shellshock.sh",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
+  "publishConfig": {
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
   },
+  "keywords": [
+    "shellshock",
+    "remote-debugging",
+    "protocol"
+  ],
+  "author": "Aditya Sinha",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0x0elliot/shellshock.sh.git",
+    "directory": "packages/shared"
+  },
+  "homepage": "https://github.com/0x0elliot/shellshock.sh",
   "devDependencies": {
     "typescript": "^5.7.0",
     "vitest": "^4.1.5"

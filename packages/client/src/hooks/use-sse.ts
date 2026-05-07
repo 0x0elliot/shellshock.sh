@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import http from "node:http";
 import https from "node:https";
-import type { ServerToClientMessage } from "@remote-debugger/shared";
+import type { ServerToClientMessage } from "shellshock.sh-shared";
 
 export function useSSE(url: string): {
   connected: boolean;
@@ -27,6 +27,11 @@ export function useSSE(url: string): {
 
     reconnectCountRef.current += 1;
     setReconnectCount(reconnectCountRef.current);
+
+    if (reconnectCountRef.current > 10) {
+      setError("Connection lost after 10 retries");
+      return;
+    }
 
     const delay = Math.min(
       1000 * Math.pow(2, reconnectCountRef.current - 1),

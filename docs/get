@@ -1,0 +1,74 @@
+#!/bin/bash
+set -e
+
+echo ""
+echo "  shellshock.sh"
+echo "  ─────────────"
+echo ""
+
+# Check for Node.js
+if ! command -v node &>/dev/null; then
+  echo "  Node.js is required but not installed."
+  echo ""
+  echo "  Install it from https://nodejs.org"
+  echo "  or via your package manager:"
+  echo ""
+  echo "    brew install node        # macOS"
+  echo "    sudo apt install nodejs  # Debian/Ubuntu"
+  echo "    sudo dnf install nodejs  # Fedora"
+  echo ""
+  exit 1
+fi
+
+# Check for npm/npx
+if ! command -v npx &>/dev/null; then
+  echo "  npx is required but not found."
+  echo "  It ships with npm — reinstall Node.js from https://nodejs.org"
+  echo ""
+  exit 1
+fi
+
+echo "  What would you like to do?"
+echo ""
+echo "    1) Get remote access to someone's machine  (engineer)"
+echo "    2) Give someone remote access to my machine (client)"
+echo ""
+printf "  Choose [1/2]: "
+read -r choice < /dev/tty
+
+case "$choice" in
+  1)
+    echo ""
+    echo "  Installing shellshock.sh..."
+    npm install -g shellshock.sh
+    echo ""
+    echo "  Starting server..."
+    echo ""
+    shellshock "$@"
+    ;;
+  2)
+    echo ""
+    echo "  Installing shellshock-client..."
+    npm install -g shellshock-client
+    echo ""
+    echo "  You need a session URL from your engineer."
+    echo "  Ask them to run:"
+    echo ""
+    echo "    curl -sL shellshock.sh/get | bash"
+    echo ""
+    echo "  and select option 1. They'll get a URL to share with you."
+    echo ""
+    printf "  Paste the session URL: "
+    read -r url < /dev/tty
+    if [ -z "$url" ]; then
+      echo "  No URL provided."
+      exit 1
+    fi
+    echo ""
+    shellshock-client "$url"
+    ;;
+  *)
+    echo "  Invalid choice."
+    exit 1
+    ;;
+esac

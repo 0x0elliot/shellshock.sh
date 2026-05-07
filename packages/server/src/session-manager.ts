@@ -9,7 +9,7 @@ import type {
   CommandRequest,
   ServerToClientMessage,
   ServerToEngineerMessage,
-} from "@remote-debugger/shared";
+} from "shellshock.sh-shared";
 
 const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 

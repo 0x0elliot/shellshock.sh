@@ -4,7 +4,7 @@ import {
   type SegmentEvaluation,
   classificationColor,
   suggestRule,
-} from "@remote-debugger/shared";
+} from "shellshock.sh-shared";
 import { AnimatedSpinner } from "./animated-spinner.js";
 
 interface CompoundPermissionPromptProps {

@@ -6,7 +6,7 @@ import {
   parseRule,
   evaluatePermission,
   evaluateCompoundPermission,
-} from "@remote-debugger/shared";
+} from "shellshock.sh-shared";
 import { clientDb } from "../db.js";
 
 export function usePermissions(sessionId: string): {

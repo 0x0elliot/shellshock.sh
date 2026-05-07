@@ -15,7 +15,7 @@ import { CommandInput } from "./components/command-input.js";
 import {
   classifyCommand,
   type ClientInfo,
-} from "@remote-debugger/shared";
+} from "shellshock.sh-shared";
 
 interface AppProps {
   sessionManager: SessionManager;
@@ -116,7 +116,13 @@ export function App({ sessionManager, host, port }: AppProps) {
         for (const [sid, cmds] of next) {
           next.set(sid, cmds.map((cmd) =>
             cmd.id === commandId
-              ? { ...cmd, output: (cmd.output ?? "") + data }
+              ? {
+                  ...cmd,
+                  output: (cmd.output ?? "") + data,
+                  status: cmd.status === "pending" || cmd.status === "approved"
+                    ? "running" as const
+                    : cmd.status,
+                }
               : cmd
           ));
         }
@@ -331,7 +337,7 @@ export function App({ sessionManager, host, port }: AppProps) {
       const idx = newSessions.findIndex((s) => s.id === sessionId);
       if (idx !== -1) setActiveIndex(idx);
 
-      copyToClipboard(`npx tsx packages/client/src/index.ts "${url}"`);
+      copyToClipboard(`npx shellshock-client "${url}"`);
       setNotification(url);
       return;
     }
@@ -358,12 +364,26 @@ export function App({ sessionManager, host, port }: AppProps) {
       setConfirmClose(false);
     }
 
+    // Ctrl+C: kill all running commands in active session, then exit
     if (input === "c" && key.ctrl) {
+      if (activeSessionId) {
+        setCommandsBySession((prev) => {
+          const next = new Map(prev);
+          const cmds = next.get(activeSessionId) ?? [];
+          for (const cmd of cmds) {
+            if (cmd.status === "running" || cmd.status === "approved"
+              || (cmd.status === "pending" && cmd.output)) {
+              sessionManager.killRunningCommand(activeSessionId, cmd.id);
+            }
+          }
+          return next;
+        });
+      }
       exit();
       process.kill(process.pid, "SIGINT");
     }
 
-    // Escape cancels interactive commands or the last pending command
+    // Escape: kill interactive, cancel pending, or kill ALL running commands
     if (key.escape && activeSessionId) {
       if (interactiveSession && interactiveSession.sessionId === activeSessionId) {
         sessionManager.killRunningCommand(activeSessionId, interactiveSession.commandId);
@@ -382,7 +402,26 @@ export function App({ sessionManager, host, port }: AppProps) {
           ));
           return next;
         });
+        return;
       }
+
+      // Kill ALL running commands at once (avoids stale-closure issues with rapid presses)
+      setCommandsBySession((prev) => {
+        const next = new Map(prev);
+        const cmds = next.get(activeSessionId) ?? [];
+        let killed = false;
+        const updated = cmds.map((cmd) => {
+          if (cmd.status === "running" || cmd.status === "approved"
+            || (cmd.status === "pending" && cmd.output)) {
+            sessionManager.killRunningCommand(activeSessionId, cmd.id);
+            killed = true;
+            return { ...cmd, status: "denied" as const, deniedReason: "Cancelled by engineer" };
+          }
+          return cmd;
+        });
+        if (killed) next.set(activeSessionId, updated);
+        return killed ? next : prev;
+      });
       return;
     }
 
@@ -396,7 +435,7 @@ export function App({ sessionManager, host, port }: AppProps) {
     }
 
     if (input === "c" && connectUrl) {
-      copyToClipboard(`npx tsx packages/client/src/index.ts "${connectUrl}"`);
+      copyToClipboard(`npx shellshock-client "${connectUrl}"`);
       return;
     }
 
@@ -487,7 +526,7 @@ export function App({ sessionManager, host, port }: AppProps) {
               <Box flexDirection="column" paddingX={2} paddingY={1}>
                 <Text color="#7aa2f7" bold>{"⟡ Share this with the customer:"}</Text>
                 <Text>{" "}</Text>
-                <Text color="#e0af68">{"  "}npx tsx packages/client/src/index.ts "{connectUrl}"</Text>
+                <Text color="#e0af68">{"  "}npx shellshock-client "{connectUrl}"</Text>
                 <Text>{" "}</Text>
                 {copied ? (
                   <Text color="#9ece6a" bold>{"  "}✓ Copied to clipboard</Text>

@@ -4,7 +4,7 @@ import {
   type CommandClassification,
   CommandClassification as CC,
   classificationColor,
-} from "@remote-debugger/shared";
+} from "shellshock.sh-shared";
 import { AnimatedSpinner } from "./animated-spinner.js";
 
 interface PermissionPromptProps {

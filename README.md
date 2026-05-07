@@ -152,9 +152,24 @@ How would you like to handle this?
 ## Installation
 
 ```bash
+npm install -g shellshock.sh      # server (for the engineer)
+npm install -g shellshock-client   # client (for the customer)
+```
+
+Or use `npx` to run without installing:
+
+```bash
+npx shellshock.sh                  # start the server
+npx shellshock-client <url>        # connect as a client
+```
+
+### From source
+
+```bash
 git clone https://github.com/0x0elliot/shellshock.sh.git
 cd shellshock.sh
 npm install
+npm run build
 ```
 
 ## Usage
@@ -162,19 +177,20 @@ npm install
 ### Start the server
 
 ```bash
-npx tsx packages/server/src/index.ts
+shellshock --port 3000 --host 0.0.0.0
 ```
 
 Options:
 - `--port <number>` — default 3000
 - `--host <address>` — default 0.0.0.0
+- `--no-tui` — headless mode (no terminal UI)
 
 The server TUI shows a session list and command output. Press **Ctrl+N** to create a new session — the connect command is auto-copied to your clipboard.
 
 ### Connect a client
 
 ```bash
-npx tsx packages/client/src/index.ts "http://host:port/session/<id>?token=<token>"
+shellshock-client "http://host:port/session/<id>?token=<token>"
 ```
 
 The client TUI shows a permission prompt for every command the engineer sends.
@@ -186,8 +202,8 @@ The client TUI shows a permission prompt for every command the engineer sends.
 | Ctrl+N | Create new session |
 | Ctrl+D (×2) | Close active session |
 | ↑↓ | Switch sessions |
-| Escape | Cancel pending command |
-| Ctrl+C | Quit |
+| Escape | Cancel running/pending commands |
+| Ctrl+C | Kill all running commands + quit |
 
 ### Client shortcuts
 

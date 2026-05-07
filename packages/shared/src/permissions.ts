@@ -421,6 +421,10 @@ function classifySingleCommandInner(base: string, trimmed: string): CommandClass
 
   if (INTERACTIVE_COMMANDS.has(base)) return CommandClassification.Interactive;
 
+  if ((base === "docker" || base === "podman") && /\bexec\b/.test(trimmed) && (/\s-[a-z]*t[a-z]*\b/.test(trimmed) || /\s--tty\b/.test(trimmed))) {
+    return CommandClassification.Interactive;
+  }
+
   if (base === "find" && (/\s-exec\b/.test(trimmed) || /\s-execdir\b/.test(trimmed) || /\s-delete\b/.test(trimmed))) {
     return CommandClassification.Destructive;
   }

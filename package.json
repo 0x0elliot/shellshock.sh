@@ -1,5 +1,5 @@
 {
-  "name": "remote-debugger",
+  "name": "shellshock.sh-monorepo",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -11,6 +11,7 @@
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces --if-present",
     "dev:server": "npm run dev -w packages/server",
-    "dev:client": "npm run dev -w packages/client"
+    "dev:client": "npm run dev -w packages/client",
+    "prepublish:all": "npm run build && npm publish --workspaces"
   }
 }

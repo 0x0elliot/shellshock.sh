@@ -8,7 +8,7 @@ import {
   classifyCommand,
   suggestRule,
   isCompoundCommand,
-} from "@remote-debugger/shared";
+} from "shellshock.sh-shared";
 import { useSSE } from "./hooks/use-sse.js";
 import { usePermissions } from "./hooks/use-permissions.js";
 import { useHandshake } from "./hooks/use-handshake.js";
@@ -387,6 +387,11 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
       }
 
       if (msg.type === "command_cancel") {
+        const killer = killersRef.current.get(msg.id);
+        if (killer) {
+          killer();
+          killersRef.current.delete(msg.id);
+        }
         setPendingPrompt((current) => {
           if (current && current.request.id === msg.id) return null;
           return current;

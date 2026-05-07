@@ -3,7 +3,7 @@ import { Box, Text } from "ink";
 import {
   type CommandClassification,
   classificationColor,
-} from "@remote-debugger/shared";
+} from "shellshock.sh-shared";
 import { AnimatedSpinner } from "./animated-spinner.js";
 
 export interface CommandEntry {

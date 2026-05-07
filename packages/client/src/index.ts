@@ -8,10 +8,10 @@ async function main() {
   const connectUrl = process.argv[2];
 
   if (!connectUrl) {
-    console.error("Usage: remote-debugger-client <connect-url>");
+    console.error("Usage: shellshock-client <connect-url>");
     console.error("");
     console.error("  The connect URL is provided by the support engineer.");
-    console.error("  Example: remote-debugger-client http://localhost:3000/session/abc123?token=xyz");
+    console.error("  Example: shellshock-client http://localhost:3000/session/abc123?token=xyz");
     process.exit(1);
     return;
   }

@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import type { ClientInfo } from "@remote-debugger/shared";
+import type { ClientInfo } from "shellshock.sh-shared";
 import { AnimatedSpinner } from "./animated-spinner.js";
 
 export interface ActiveSessionInfo {
