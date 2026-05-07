@@ -161,15 +161,27 @@
 
   <script>
     function copyCmd(el) {
-      const text = 'curl -sL shellshock.sh/get | bash';
-      navigator.clipboard.writeText(text);
-      const btn = el.querySelector('.copy-btn');
-      btn.textContent = 'copied';
-      btn.classList.add('copied');
-      setTimeout(() => {
-        btn.textContent = 'copy';
-        btn.classList.remove('copied');
-      }, 2000);
+      var text = 'curl -sL shellshock.sh/get | bash';
+      var btn = el.querySelector('.copy-btn');
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        btn.textContent = 'copied';
+        btn.classList.add('copied');
+        setTimeout(function() {
+          btn.textContent = 'copy';
+          btn.classList.remove('copied');
+        }, 2000);
+      } catch(e) {
+        btn.textContent = 'failed';
+        setTimeout(function() { btn.textContent = 'copy'; }, 2000);
+      }
     }
   </script>
 </body>
