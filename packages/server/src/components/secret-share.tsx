@@ -99,13 +99,13 @@ export function SecretSharePanel({
     const fetchUrl = `${baseUrl}/s/${entry.authId}`;
     setPhase({ type: "waiting", entry, fetchUrl });
 
-    const cmd = `curl -sL shellshock.sh/secret | bash -s -- ${fetchUrl} ${entry.decryptKey}`;
+    const cmd = `curl -sf -H "ngrok-skip-browser-warning: 1" ${fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass pass:${entry.decryptKey} 2>/dev/null`;
     if (copyToClipboard(cmd)) setCopied(true);
   }
 
   function copyRecipientCmd() {
     if (phase.type !== "waiting") return;
-    const cmd = `curl -sL shellshock.sh/secret | bash -s -- ${phase.fetchUrl} ${phase.entry.decryptKey}`;
+    const cmd = `curl -sf -H "ngrok-skip-browser-warning: 1" ${phase.fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass pass:${phase.entry.decryptKey} 2>/dev/null`;
     if (copyToClipboard(cmd)) setCopied(true);
   }
 
@@ -227,8 +227,8 @@ export function SecretSharePanel({
   }
 
   if (phase.type === "waiting") {
-    const recipientCmd = `curl -sL shellshock.sh/secret | bash -s -- ${phase.fetchUrl} ${phase.entry.decryptKey}`;
-    const directCmd = `curl -s -H "ngrok-skip-browser-warning: 1" ${phase.fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass pass:${phase.entry.decryptKey}`;
+    const directCmd = `curl -sf -H "ngrok-skip-browser-warning: 1" ${phase.fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass pass:${phase.entry.decryptKey} 2>/dev/null`;
+    const scriptCmd = `curl -sL shellshock.sh/secret | bash -s -- ${phase.fetchUrl} ${phase.entry.decryptKey}`;
 
     return (
       <Box flexDirection="column" flexGrow={1} paddingX={1}>
@@ -246,11 +246,11 @@ export function SecretSharePanel({
           <Text>{" "}</Text>
           <Text color="#a9b1d6">{"  "}Recipient command:</Text>
           <Text>{" "}</Text>
-          <Text color="#7dcfff">{"    "}{recipientCmd}</Text>
+          <Text color="#7dcfff">{"    "}{directCmd}</Text>
           <Text>{" "}</Text>
-          <Text color="#565f89" dimColor>{"  "}Or directly:</Text>
+          <Text color="#565f89" dimColor>{"  "}Or via helper script:</Text>
           <Text>{" "}</Text>
-          <Text color="#565f89">{"    "}{directCmd}</Text>
+          <Text color="#565f89">{"    "}{scriptCmd}</Text>
           <Text>{" "}</Text>
           {copied ? (
             <Text color="#9ece6a" bold>

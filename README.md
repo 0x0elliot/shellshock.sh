@@ -1,6 +1,10 @@
 # shellshock.sh
 
-A remote debugging tool where a support engineer can securely request shell commands on a customer's machine. Every command requires explicit customer approval through a terminal UI — no command runs without consent.
+Remote debugging and secure secret sharing over the terminal.
+
+**Remote debugging** — a support engineer can securely request shell commands on a customer's machine. Every command requires explicit customer approval through a terminal UI — no command runs without consent.
+
+**Secret sharing** — share API keys, tokens, and credentials end-to-end encrypted. The decryption key never reaches the server — even over ngrok, the middleman can't read your secrets. Burns after first retrieval.
 
 ## How It Works
 
@@ -32,12 +36,16 @@ A remote debugging tool where a support engineer can securely request shell comm
 │  Express HTTP  ◄──────────────────────►  Ink TUI             │
 │  ├─ POST /api/sessions/:id/commands      ├─ Session list     │
 │  ├─ GET  /api/sessions/:id/events (SSE)  ├─ Command output   │
-│  ├─ POST /api/sessions/:id/respond       └─ Command input    │
-│  └─ GET  /api/sessions/:id/engineer-events (SSE)             │
+│  ├─ POST /api/sessions/:id/respond       ├─ Command input    │
+│  ├─ GET  /api/sessions/:id/engineer-events (SSE)             │
+│  └─ GET  /s/:authId (secret retrieval)   └─ Secret share     │
 │                                                              │
 │  SessionManager (EventEmitter)                               │
 │  ├─ In-memory: SSE connections, pending commands, keys       │
 │  └─ Durable: SQLite (sessions, commands, output)             │
+│                                                              │
+│  SecretStore (EventEmitter)                                  │
+│  └─ In-memory only: encrypted blobs, burn-after-read         │
 └──────────────────────────────────────────────────────────────┘
                           │
               SSE (server→client)
@@ -149,6 +157,70 @@ How would you like to handle this?
 
 **Engineer interacts**: A real PTY is created via `node-pty`. The engineer's keystrokes are relayed over SSE to the client's PTY, and output is streamed back. The client sees the live terminal output on their screen. The engineer sees stripped text output in their TUI. Press **Ctrl+]** to detach from the interactive session (like telnet).
 
+## Secret Sharing
+
+Share secrets with end-to-end encryption — the server only ever sees ciphertext.
+
+```
+ Sender (Server TUI)                              Recipient
+ ┌─────────────────────────────────┐
+ │                                 │
+ │  Ctrl+S → type secret → Enter  │
+ │                                 │
+ │  ✓ Secret encrypted (35 bytes) │
+ │                                 │
+ │  Recipient command:             │               curl ... | openssl ...
+ │    curl -sf ... | openssl ...   │  ──────────►  MY_API_KEY=sk-prod-abc
+ │                                 │
+ │  ✓ Retrieved by 203.0.113.42   │               (decrypted locally,
+ │  Secret destroyed from memory.  │                key never sent to server)
+ └─────────────────────────────────┘
+```
+
+### How it works
+
+1. Secret is encrypted with AES-256-CBC using a random key
+2. The encrypted blob is stored in memory (never touches disk)
+3. The recipient gets a one-liner with the fetch URL and the decryption key
+4. The URL fetches the encrypted blob — the decryption key stays local
+5. After first retrieval the secret is destroyed from memory
+
+**ngrok can't read your secrets** — the tunnel only sees ciphertext. The decryption key is in the command the recipient runs, never sent to the server.
+
+### From the TUI
+
+Press **Ctrl+S** in the server TUI to open the secret sharing panel. Type your secret, press Enter. The retrieval command is auto-copied to your clipboard.
+
+### Standalone mode
+
+```bash
+echo "API_KEY=sk-live-abc123" | shellshock-share
+cat .env | shellshock-share
+shellshock-share --port 5000 --ttl 30
+```
+
+### Retrieving a secret
+
+The recipient runs the one-liner — no install needed, just `curl` + `openssl`:
+
+```bash
+curl -sf -H "ngrok-skip-browser-warning: 1" https://<url>/s/<id> | openssl enc -aes-256-cbc -d -a -md sha256 -pass pass:<key> 2>/dev/null
+```
+
+Or via the helper script:
+
+```bash
+curl -sL shellshock.sh/secret | bash -s -- <url> <key>
+```
+
+### Security properties
+
+- **End-to-end encrypted** — AES-256-CBC, OpenSSL-compatible format
+- **Memory only** — nothing written to disk, no database, no logs
+- **Burn after reading** — destroyed after first retrieval
+- **Auto-expiry** — defaults to 15 minutes (configurable with `--ttl`)
+- **Split-token** — auth ID authenticates the request, decryption key stays client-side
+
 ## Installation
 
 ```bash
@@ -177,11 +249,11 @@ npm run build
 ### Start the server
 
 ```bash
-shellshock --port 3000 --host 0.0.0.0
+shellshock --port 4800 --host 0.0.0.0
 ```
 
 Options:
-- `--port <number>` — default 3000
+- `--port <number>` — default 4800
 - `--host <address>` — default 0.0.0.0
 - `--no-tui` — headless mode (no terminal UI)
 
@@ -200,6 +272,7 @@ The client TUI shows a permission prompt for every command the engineer sends.
 | Key | Action |
 |-----|--------|
 | Ctrl+N | Create new session |
+| Ctrl+S | Share a secret |
 | Ctrl+D (×2) | Close active session |
 | ↑↓ | Switch sessions |
 | Escape | Cancel running/pending commands |

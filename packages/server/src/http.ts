@@ -176,7 +176,7 @@ export function createServer(sessionManager: SessionManager, secretStore?: Secre
         return;
       }
 
-      res.type("text").send(blob);
+      res.type("text").send(blob + "\n");
     });
   }
 
