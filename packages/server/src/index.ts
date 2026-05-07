@@ -107,7 +107,7 @@ async function main() {
 
   const sessionManager = new SessionManager();
   const secretStore = new SecretStore();
-  const app = createServer(sessionManager, secretStore);
+  const { app, engineerToken } = createServer(sessionManager, secretStore);
 
   const server = app.listen(port, host, async () => {
     const localUrl = `http://${host === "0.0.0.0" ? "localhost" : host}:${port}`;
@@ -126,10 +126,11 @@ async function main() {
 
     if (noTui || !process.stdin.isTTY) {
       console.log(`shellshock.sh server running at ${tunnelUrl ?? localUrl}`);
+      console.log(`Engineer token: ${engineerToken}`);
       console.log("");
       console.log("Create a session:");
       console.log(
-        `  curl -X POST ${tunnelUrl ?? localUrl}/api/sessions -H "Content-Type: application/json" -d '{"label":"my-session"}'`
+        `  curl -X POST ${tunnelUrl ?? localUrl}/api/sessions -H "Authorization: Bearer ${engineerToken}" -H "Content-Type: application/json" -d '{"label":"my-session"}'`
       );
       console.log("");
       console.log("Press Ctrl+C to stop.");

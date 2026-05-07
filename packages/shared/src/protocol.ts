@@ -3,6 +3,7 @@ export interface CommandRequest {
   id: string;
   command: string;
   cwd?: string;
+  interactive?: boolean;
 }
 
 export interface CommandApproved {

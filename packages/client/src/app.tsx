@@ -294,16 +294,38 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
 
   const processRequest = useCallback(
     (request: CommandRequest) => {
-      const compound = isCompoundCommand(request.command);
+      const classification = request.interactive
+        ? CommandClassification.Interactive
+        : classifyCommand(request.command);
 
       setCommands((prev) => {
         if (prev.some((c) => c.id === request.id)) return prev;
-        const classification = classifyCommand(request.command);
         return [
           ...prev,
           { id: request.id, command: request.command, status: "pending" as const, classification },
         ];
       });
+
+      if (request.interactive) {
+        const evaluation = permissions.evaluate(request.command);
+        if (evaluation.decision === "deny") {
+          postToServer({ type: "command_denied", id: request.id, reason: evaluation.reason });
+          setCommands((prev) =>
+            prev.map((c) =>
+              c.id === request.id
+                ? { ...c, status: "denied" as const, deniedReason: evaluation.reason }
+                : c,
+            ),
+          );
+        } else if (isPromptActive) {
+          setCommandQueue((prev) => [...prev, request]);
+        } else {
+          setInteractiveChoice(request);
+        }
+        return;
+      }
+
+      const compound = isCompoundCommand(request.command);
 
       if (compound) {
         // Evaluate per-group for compound commands

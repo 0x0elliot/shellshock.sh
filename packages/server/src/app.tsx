@@ -13,8 +13,12 @@ import type { SecretStore } from "./secret-store.js";
 import { useOutputBuffer } from "./hooks/use-output-buffer.js";
 import {
   classifyCommand,
+  CommandClassification,
   type ClientInfo,
 } from "shellshock.sh-shared";
+
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1B(?:\[[0-9;?]*[A-Za-z]|\][^\x07\x1B]*(?:\x07|\x1B\\)|\([A-Za-z0-9]|[>=<])|[\x00-\x08\x0B\x0C\x0E-\x1A\x1C-\x1F]/g;
 
 interface AppProps {
   sessionManager: SessionManager;
@@ -153,7 +157,7 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
     }
 
     function onCommandOutput(_sid: string, commandId: string, _stream: string, data: string) {
-      pushOutput(commandId, data);
+      pushOutput(commandId, data.replace(ANSI_RE, ""));
     }
 
     function onCommandExit(_sid: string, commandId: string, exitCode: number | null) {
@@ -231,8 +235,10 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
 
     const savedDataListeners = process.stdin.rawListeners("data").slice();
     const savedKeypressListeners = process.stdin.rawListeners("keypress").slice();
+    const savedReadableListeners = process.stdin.rawListeners("readable").slice();
     process.stdin.removeAllListeners("data");
     process.stdin.removeAllListeners("keypress");
+    process.stdin.removeAllListeners("readable");
 
     const rawStdoutWrite = process.stdout.write.bind(process.stdout) as typeof process.stdout.write;
     (process.stdout as any).write = (() => true) as any;
@@ -278,6 +284,8 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
 
       process.stdin.removeAllListeners("data");
       process.stdin.removeAllListeners("keypress");
+      process.stdin.removeAllListeners("readable");
+      for (const l of savedReadableListeners) process.stdin.on("readable", l as (...args: unknown[]) => void);
       for (const l of savedDataListeners) process.stdin.on("data", l as (...args: unknown[]) => void);
       for (const l of savedKeypressListeners) process.stdin.on("keypress", l as (...args: unknown[]) => void);
     };
@@ -370,13 +378,19 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
     }
   });
 
-  function handleCommandSubmit(command: string) {
+  function handleCommandSubmit(raw: string) {
     if (!sessionId || !canSendCommands) return;
 
-    const commandId = sessionManager.requestCommand(sessionId, command);
+    const interactive = raw.startsWith("!");
+    const command = interactive ? raw.slice(1).trimStart() : raw;
+    if (!command) return;
+
+    const commandId = sessionManager.requestCommand(sessionId, command, undefined, interactive);
     if (!commandId) return;
 
-    const classification = classifyCommand(command);
+    const classification = interactive
+      ? CommandClassification.Interactive
+      : classifyCommand(command);
     const entry: CommandEntry = {
       id: commandId,
       command,

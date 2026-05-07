@@ -1,4 +1,5 @@
 import express from "express";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { dbOps } from "./db.js";
@@ -10,6 +11,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export function createServer(sessionManager: SessionManager, secretStore?: SecretStore) {
+  const engineerToken = crypto.randomBytes(24).toString("base64url");
   const app = express();
 
   app.use(express.json());
@@ -43,6 +45,19 @@ export function createServer(sessionManager: SessionManager, secretStore?: Secre
     return null;
   }
 
+  function engineerAuth(
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ): void {
+    const token = extractToken(req);
+    if (token !== engineerToken) {
+      res.status(403).json({ error: "Invalid engineer token" });
+      return;
+    }
+    next();
+  }
+
   function clientAuth(
     req: express.Request,
     res: express.Response,
@@ -64,8 +79,8 @@ export function createServer(sessionManager: SessionManager, secretStore?: Secre
     next();
   }
 
-  // POST /api/sessions — create session
-  app.post("/api/sessions", (req, res) => {
+  // POST /api/sessions — create session (engineer only)
+  app.post("/api/sessions", engineerAuth, (req, res) => {
     const { label } = req.body ?? {};
     const { sessionId, token } = sessionManager.createSession(label);
 
@@ -76,8 +91,8 @@ export function createServer(sessionManager: SessionManager, secretStore?: Secre
     res.json({ sessionId, token, connectUrl });
   });
 
-  // GET /api/sessions — list
-  app.get("/api/sessions", (_req, res) => {
+  // GET /api/sessions — list (engineer only)
+  app.get("/api/sessions", engineerAuth, (_req, res) => {
     const sessions = sessionManager.getActiveSessions().map((s) => ({
       id: s.id,
       label: s.label,
@@ -129,8 +144,8 @@ export function createServer(sessionManager: SessionManager, secretStore?: Secre
     res.json({ ok: true });
   });
 
-  // GET /api/sessions/:id/engineer-events — engineer SSE
-  app.get("/api/sessions/:id/engineer-events", (req, res) => {
+  // GET /api/sessions/:id/engineer-events — engineer SSE (engineer only)
+  app.get("/api/sessions/:id/engineer-events", engineerAuth, (req, res) => {
     const sessionId = req.params.id as string;
     const connected = sessionManager.connectEngineer(sessionId, res);
     if (!connected) {
@@ -141,8 +156,8 @@ export function createServer(sessionManager: SessionManager, secretStore?: Secre
     }
   });
 
-  // POST /api/sessions/:id/commands — engineer sends command (gated on handshake)
-  app.post("/api/sessions/:id/commands", (req, res) => {
+  // POST /api/sessions/:id/commands — engineer sends command (engineer only, gated on handshake)
+  app.post("/api/sessions/:id/commands", engineerAuth, (req, res) => {
     const sessionId = req.params.id as string;
     const { command, cwd } = req.body ?? {};
 
@@ -186,5 +201,5 @@ export function createServer(sessionManager: SessionManager, secretStore?: Secre
     res.sendFile(join(publicDir, "index.html"));
   });
 
-  return app;
+  return { app, engineerToken };
 }

@@ -275,7 +275,8 @@ export class SessionManager extends EventEmitter {
   requestCommand(
     sessionId: string,
     command: string,
-    cwd?: string
+    cwd?: string,
+    interactive?: boolean,
   ): string | null {
     const session = this.sessions.get(sessionId);
     if (!session) return null;
@@ -292,6 +293,7 @@ export class SessionManager extends EventEmitter {
       id: commandId,
       command,
       cwd,
+      ...(interactive ? { interactive: true } : {}),
     };
 
     session.pendingCommands.set(commandId, request);

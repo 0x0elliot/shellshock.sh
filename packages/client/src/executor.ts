@@ -22,7 +22,7 @@ function ensurePtyPermissions() {
 // eslint-disable-next-line no-control-regex
 const ANSI_ESCAPE_RE = /\x1B(?:\[[0-9;?]*[A-Za-z]|\][^\x07\x1B]*(?:\x07|\x1B\\)|\([A-Za-z0-9]|[>=<])|[\x00-\x08\x0B\x0C\x0E-\x1A\x1C-\x1F]/g;
 
-function stripEscapes(data: string): string {
+export function stripEscapes(data: string): string {
   return data.replace(ANSI_ESCAPE_RE, "");
 }
 
@@ -40,7 +40,7 @@ export function executeCommand(
     child = spawn(command, [], {
       shell: true,
       cwd: cwd || process.cwd(),
-      env: process.env,
+      env: { ...process.env, PAGER: "cat", GIT_PAGER: "cat" },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
