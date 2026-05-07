@@ -21,7 +21,7 @@
 
     .hero {
       text-align: center;
-      max-width: 720px;
+      max-width: 760px;
     }
 
     .ascii {
@@ -40,7 +40,7 @@
       color: #888;
       margin-bottom: 2.5rem;
       line-height: 1.6;
-      max-width: 520px;
+      max-width: 560px;
       margin-left: auto;
       margin-right: auto;
     }
@@ -50,27 +50,72 @@
       font-weight: 600;
     }
 
-    .cmd-block {
+    .modes {
+      display: flex;
+      gap: 1.5rem;
+      margin-bottom: 2.5rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .mode {
       background: #161616;
       border: 1px solid #2a2a2a;
-      border-radius: 6px;
-      padding: 1rem 1.5rem;
-      display: inline-flex;
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      text-align: left;
+      flex: 1;
+      min-width: 280px;
+      max-width: 360px;
+      transition: border-color 0.15s;
+    }
+
+    .mode:hover {
+      border-color: #444;
+    }
+
+    .mode-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.75rem;
+      font-weight: 600;
+    }
+
+    .mode-debug .mode-label { color: #7aa2f7; }
+    .mode-secret .mode-label { color: #bb9af7; }
+
+    .mode-desc {
+      font-size: 0.8rem;
+      color: #666;
+      margin-bottom: 1rem;
+      line-height: 1.5;
+    }
+
+    .cmd-row {
+      display: flex;
       align-items: center;
-      gap: 1rem;
-      margin-bottom: 2.5rem;
+      gap: 0.75rem;
+      background: #0d0d0d;
+      border: 1px solid #222;
+      border-radius: 4px;
+      padding: 0.6rem 0.8rem;
       cursor: pointer;
       transition: border-color 0.15s;
     }
 
-    .cmd-block:hover {
+    .cmd-row:hover {
       border-color: #444;
     }
 
     .cmd-text {
-      font-size: 0.95rem;
+      font-size: 0.82rem;
       color: #e0e0e0;
       user-select: all;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .cmd-text .prompt { color: #555; }
@@ -80,13 +125,14 @@
       background: none;
       border: 1px solid #333;
       border-radius: 4px;
-      padding: 0.3rem 0.5rem;
+      padding: 0.25rem 0.45rem;
       cursor: pointer;
       font-family: inherit;
-      font-size: 0.7rem;
+      font-size: 0.65rem;
       color: #666;
       transition: all 0.15s;
       white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .copy-btn:hover {
@@ -97,6 +143,22 @@
     .copy-btn.copied {
       border-color: #e0e0e0;
       color: #e0e0e0;
+    }
+
+    .mode-hint {
+      font-size: 0.7rem;
+      color: #444;
+      margin-top: 0.6rem;
+    }
+
+    .mode-hint kbd {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 3px;
+      padding: 0.1rem 0.35rem;
+      font-family: inherit;
+      font-size: 0.65rem;
+      color: #888;
     }
 
     .links {
@@ -123,7 +185,8 @@
 
     @media (max-width: 520px) {
       .ascii { font-size: 0.38rem; }
-      .cmd-block { padding: 0.8rem 1rem; gap: 0.75rem; }
+      .modes { flex-direction: column; align-items: center; }
+      .mode { max-width: 100%; }
     }
   </style>
   <script type="text/javascript">
@@ -144,16 +207,41 @@
  /___/_//_/\__/ /_/_/___/_//_/\___/\__/_/_/\_\ /___/_//_/</div>
 
     <p class="tagline">
-      Remote debug any machine.<br>
-      Every command needs <strong>explicit approval</strong>.<br>
-      Nothing runs without consent.
+      Remote debugging and <strong>secret sharing</strong> over the terminal.<br>
+      Nothing runs without a yes. Nothing leaks in transit.
     </p>
 
-    <div class="cmd-block" onclick="copyCmd(this)" title="Click to copy">
-      <div class="cmd-text">
-        <span class="prompt">$ </span><span class="bin">curl -sL shellshock.sh/get | bash</span>
+    <div class="modes">
+
+      <div class="mode mode-debug">
+        <div class="mode-label">Remote Debug</div>
+        <div class="mode-desc">
+          Request shell commands on a customer's machine.
+          Every command needs explicit approval.
+        </div>
+        <div class="cmd-row" onclick="copyCmd(this, 'curl -sL shellshock.sh/get | bash')" title="Click to copy">
+          <div class="cmd-text">
+            <span class="prompt">$ </span><span class="bin">curl -sL shellshock.sh/get | bash</span>
+          </div>
+          <button class="copy-btn" onclick="event.stopPropagation(); copyCmd(this.parentElement, 'curl -sL shellshock.sh/get | bash')">copy</button>
+        </div>
       </div>
-      <button class="copy-btn" onclick="event.stopPropagation(); copyCmd(this.parentElement)">copy</button>
+
+      <div class="mode mode-secret">
+        <div class="mode-label">Share Secrets</div>
+        <div class="mode-desc">
+          End-to-end encrypted. The server never sees the decryption key.
+          Burns after first retrieval.
+        </div>
+        <div class="cmd-row" onclick="copyCmd(this, 'npx shellshock.sh')" title="Click to copy">
+          <div class="cmd-text">
+            <span class="prompt">$ </span><span class="bin">npx shellshock.sh</span>
+          </div>
+          <button class="copy-btn" onclick="event.stopPropagation(); copyCmd(this.parentElement, 'npx shellshock.sh')">copy</button>
+        </div>
+        <div class="mode-hint">then press <kbd>Ctrl+S</kbd> to share a secret</div>
+      </div>
+
     </div>
 
     <p class="links">
@@ -167,8 +255,7 @@
   </div>
 
   <script>
-    function copyCmd(el) {
-      var text = 'curl -sL shellshock.sh/get | bash';
+    function copyCmd(el, text) {
       var btn = el.querySelector('.copy-btn');
       try {
         var ta = document.createElement('textarea');
