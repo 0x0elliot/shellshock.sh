@@ -12,7 +12,8 @@
     }
   },
   "bin": {
-    "shellshock": "./dist/index.js"
+    "shellshock": "./dist/index.js",
+    "shellshock-share": "./dist/secret-server.js"
   },
   "files": [
     "dist"
