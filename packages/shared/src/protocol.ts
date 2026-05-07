@@ -113,6 +113,11 @@ export interface HandshakeChallenge {
 export interface HandshakeResponse {
   type: "handshake_response";
   encryptedNonce: string;
+  encryptedSessionKey: string;
+}
+
+export interface EncryptedEnvelope {
+  _enc: string;
 }
 
 export interface HandshakeComplete {

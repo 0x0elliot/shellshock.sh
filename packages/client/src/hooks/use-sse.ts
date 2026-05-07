@@ -1,16 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import http from "node:http";
 import https from "node:https";
-import type { ServerToClientMessage } from "shellshock.sh-shared";
+import type { ServerToClientMessage, EncryptedEnvelope } from "shellshock.sh-shared";
+
+export type RawSSEMessage = ServerToClientMessage | EncryptedEnvelope;
 
 export function useSSE(url: string): {
   connected: boolean;
-  messages: ServerToClientMessage[];
+  messages: RawSSEMessage[];
   error: string | null;
   reconnectCount: number;
 } {
   const [connected, setConnected] = useState(false);
-  const [messages, setMessages] = useState<ServerToClientMessage[]>([]);
+  const [messages, setMessages] = useState<RawSSEMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [reconnectCount, setReconnectCount] = useState(0);
 
@@ -85,7 +87,7 @@ export function useSSE(url: string): {
         const parts = buffer.split("\n\n");
         buffer = parts.pop() || "";
 
-        const batch: ServerToClientMessage[] = [];
+        const batch: RawSSEMessage[] = [];
         for (const part of parts) {
           const lines = part.split("\n");
           let data = "";
@@ -99,9 +101,9 @@ export function useSSE(url: string): {
           if (!data) continue;
 
           try {
-            const msg: ServerToClientMessage = JSON.parse(data);
+            const msg = JSON.parse(data);
             if (msg.type === "heartbeat") continue;
-            batch.push(msg);
+            batch.push(msg as RawSSEMessage);
           } catch {
             // Ignore malformed JSON
           }

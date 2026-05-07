@@ -4,10 +4,14 @@ import {
   type CommandRequest,
   type ClientToServerMessage,
   type CompoundPermissionEvaluation as CompoundEval,
+  type EncryptedEnvelope,
+  type ServerToClientMessage,
   CommandClassification,
   classifyCommand,
   suggestRule,
   isCompoundCommand,
+  encryptMessage,
+  decryptMessage,
 } from "shellshock.sh-shared";
 import { useSSE } from "./hooks/use-sse.js";
 import { usePermissions } from "./hooks/use-permissions.js";
@@ -70,6 +74,8 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
   const processedMsgCountRef = useRef(0);
   const killersRef = useRef<Map<string, () => void>>(new Map());
   const ptyRef = useRef<PTYHandle | null>(null);
+  const sessionKeyRef = useRef<Buffer | null>(null);
+  sessionKeyRef.current = handshake.sessionKey;
 
   const pushOutput = useOutputBuffer(
     useCallback((merged: Map<string, string>) => {
@@ -90,7 +96,10 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
   const postToServer = useCallback(
     async (msg: ClientToServerMessage) => {
       const url = `${serverBaseUrl}/api/sessions/${sessionId}/respond?token=${token}`;
-      const body = JSON.stringify(msg);
+      const key = sessionKeyRef.current;
+      const body = key
+        ? JSON.stringify({ _enc: encryptMessage(key, JSON.stringify(msg)) })
+        : JSON.stringify(msg);
       const maxRetries = 3;
       const baseDelay = 500;
 
@@ -399,8 +408,22 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
   useEffect(() => {
     if (handshake.state !== "complete") return;
 
+    const key = handshake.sessionKey;
+
     for (let i = processedMsgCountRef.current; i < messages.length; i++) {
-      const msg = messages[i];
+      const raw = messages[i];
+
+      let msg: ServerToClientMessage;
+      if ("_enc" in raw) {
+        if (!key) continue;
+        try {
+          msg = JSON.parse(decryptMessage(key, raw._enc));
+        } catch {
+          continue;
+        }
+      } else {
+        msg = raw;
+      }
 
       if (msg.type === "interactive_input") {
         ptyRef.current?.write(msg.data);

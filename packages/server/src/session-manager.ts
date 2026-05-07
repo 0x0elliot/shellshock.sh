@@ -3,10 +3,15 @@ import crypto from "node:crypto";
 import { nanoid } from "nanoid";
 import type { Response } from "express";
 import { dbOps } from "./db.js";
+import {
+  encryptMessage,
+  decryptMessage,
+} from "shellshock.sh-shared";
 import type {
   ClientInfo,
   ClientToServerMessage,
   CommandRequest,
+  EncryptedEnvelope,
   ServerToClientMessage,
   ServerToEngineerMessage,
 } from "shellshock.sh-shared";
@@ -28,6 +33,7 @@ export interface ActiveSession {
   handshakeComplete: boolean;
   privateKey: string | null;
   nonce: string | null;
+  sessionKey: Buffer | null;
 }
 
 const SSE_HEADERS = {
@@ -57,6 +63,7 @@ function createEmptySession(
     handshakeComplete: false,
     privateKey: null,
     nonce: null,
+    sessionKey: null,
   };
 }
 
@@ -143,7 +150,7 @@ export class SessionManager extends EventEmitter {
     return true;
   }
 
-  private verifyHandshake(sessionId: string, encryptedNonce: string): boolean {
+  private verifyHandshake(sessionId: string, encryptedNonce: string, encryptedSessionKey: string): boolean {
     const session = this.sessions.get(sessionId);
     if (!session || !session.privateKey || !session.nonce) return false;
 
@@ -155,6 +162,13 @@ export class SessionManager extends EventEmitter {
 
       if (decrypted !== session.nonce) return false;
 
+      const sessionKey = crypto.privateDecrypt(
+        { key: session.privateKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING },
+        Buffer.from(encryptedSessionKey, "base64")
+      );
+      if (sessionKey.length !== 32) return false;
+
+      session.sessionKey = sessionKey;
       session.handshakeComplete = true;
       session.privateKey = null;
       session.nonce = null;
@@ -261,6 +275,12 @@ export class SessionManager extends EventEmitter {
   sendToClient(sessionId: string, msg: ServerToClientMessage): boolean {
     const session = this.sessions.get(sessionId);
     if (!session?.clientSSE) return false;
+    if (session.sessionKey) {
+      const envelope: EncryptedEnvelope = {
+        _enc: encryptMessage(session.sessionKey, JSON.stringify(msg)),
+      };
+      return this.writeSSE(session.clientSSE, envelope);
+    }
     return this.writeSSE(session.clientSSE, msg);
   }
 
@@ -356,16 +376,29 @@ export class SessionManager extends EventEmitter {
 
   handleClientResponse(
     sessionId: string,
-    msg: ClientToServerMessage
+    rawMsg: ClientToServerMessage | EncryptedEnvelope
   ): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
     this.touchSession(sessionId);
 
+    let msg: ClientToServerMessage;
+    if ("_enc" in rawMsg && session.sessionKey) {
+      try {
+        msg = JSON.parse(decryptMessage(session.sessionKey, rawMsg._enc));
+      } catch {
+        return;
+      }
+    } else if ("_enc" in rawMsg) {
+      return;
+    } else {
+      msg = rawMsg;
+    }
+
     switch (msg.type) {
       case "handshake_response": {
-        const ok = this.verifyHandshake(sessionId, msg.encryptedNonce);
+        const ok = this.verifyHandshake(sessionId, msg.encryptedNonce, msg.encryptedSessionKey);
         if (!ok) {
           const err = { type: "handshake_error" as const, message: "Handshake verification failed" };
           this.sendToClient(sessionId, err);
@@ -468,6 +501,7 @@ export class SessionManager extends EventEmitter {
     session.handshakeComplete = false;
     session.privateKey = null;
     session.nonce = null;
+    session.sessionKey = null;
 
     this.sendToEngineer(sessionId, {
       type: "client_disconnected",
@@ -500,6 +534,7 @@ export class SessionManager extends EventEmitter {
       session.engineerSSE = null;
     }
 
+    session.sessionKey = null;
     dbOps.closeSession(sessionId);
     this.sessions.delete(sessionId);
   }
