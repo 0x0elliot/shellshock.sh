@@ -509,6 +509,7 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
               : c,
           ),
         );
+        setTimeout(() => processQueue(), 0);
       }
     }
     processedMsgCountRef.current = messages.length;
@@ -559,6 +560,7 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
       );
       postToServer({ type: "command_exit", id: request.id, exitCode: code, signal });
       setInteractiveRun(null);
+      processQueue();
     })();
 
     return () => { cancelled = true; };
@@ -598,6 +600,7 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
 
         postToServer({ type: "command_exit", id: request.id, exitCode: code, signal });
         setInteractiveRun(null);
+        processQueue();
       },
     );
 
