@@ -64,12 +64,12 @@ case "$choice" in
       echo ""
       echo "  Starting server + ngrok tunnel..."
       echo ""
-      npx shellshock.sh@nightly < /dev/tty
+      npx -p shellshock.sh@nightly shellshock < /dev/tty
     else
       echo ""
       echo "  Starting server..."
       echo ""
-      npx shellshock.sh@nightly --no-tunnel < /dev/tty
+      npx -p shellshock.sh@nightly shellshock --no-tunnel < /dev/tty
     fi
     ;;
   2)
