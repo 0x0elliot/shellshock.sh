@@ -558,7 +558,16 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
       );
 
       (process.stdout as any).write = rawStdoutWrite;
-      process.stdout.write("\x1B[?1049h");
+
+      // Interactive programs (less, vim) restore terminal to canonical mode
+      // on exit. Reset terminal state so Ink can render and read input.
+      if (process.stdin.isTTY && process.stdin.setRawMode) {
+        process.stdin.setRawMode(false);
+        process.stdin.setRawMode(true);
+      }
+      // Clear any leftover terminal modes and re-enter alt screen
+      rawStdoutWrite("\x1b[?1003l\x1b[?1006l\x1b[?1002l\x1b[?1000l");
+      rawStdoutWrite("\x1B[?1049h");
 
       process.stdin.removeAllListeners("data");
       process.stdin.removeAllListeners("keypress");

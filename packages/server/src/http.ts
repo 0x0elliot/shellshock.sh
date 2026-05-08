@@ -157,7 +157,7 @@ export function createServer(sessionManager: SessionManager, secretStore?: Secre
   // POST /api/sessions/:id/commands — engineer sends command (engineer only, gated on handshake)
   app.post("/api/sessions/:id/commands", engineerAuth, (req, res) => {
     const sessionId = req.params.id as string;
-    const { command, cwd } = req.body ?? {};
+    const { command, cwd, interactive } = req.body ?? {};
 
     if (!command || typeof command !== "string") {
       res.status(400).json({ error: "command is required" });
@@ -169,7 +169,7 @@ export function createServer(sessionManager: SessionManager, secretStore?: Secre
       return;
     }
 
-    const commandId = sessionManager.requestCommand(sessionId, command, cwd);
+    const commandId = sessionManager.requestCommand(sessionId, command, cwd, interactive);
     if (!commandId) {
       res.status(404).json({ error: "Session not found" });
       return;

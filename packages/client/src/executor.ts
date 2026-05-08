@@ -166,11 +166,19 @@ export function executeInteractive(
 
     child.on("exit", (code, signal) => {
       process.stdin.resume();
+      // Interactive programs (less, vim) restore terminal to canonical mode
+      // on exit. Ink requires raw mode, so re-enable it.
+      if (process.stdin.isTTY && process.stdin.setRawMode) {
+        process.stdin.setRawMode(true);
+      }
       resolve({ code, signal: signal ?? null });
     });
 
     child.on("error", () => {
       process.stdin.resume();
+      if (process.stdin.isTTY && process.stdin.setRawMode) {
+        process.stdin.setRawMode(true);
+      }
       resolve({ code: -1, signal: null });
     });
   });
