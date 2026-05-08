@@ -154,6 +154,11 @@ async function main() {
   const app = express();
 
   app.get("/s/:authId", (req, res) => {
+    if (req.headers["x-shellshock"] !== "1") {
+      res.status(404).type("text").send("Not found.\n");
+      return;
+    }
+
     const entry = store.get(req.params.authId);
 
     if (!entry) {
@@ -228,7 +233,7 @@ async function main() {
     console.log("  Or directly:");
     console.log("");
     console.log(
-      `    curl -s -H "ngrok-skip-browser-warning: 1" ${fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass pass:${decryptKey} 2>/dev/null`
+      `    curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" ${fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass pass:${decryptKey} 2>/dev/null || echo "Error: secret not found or already retrieved"`
     );
     console.log("");
     console.log(

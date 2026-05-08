@@ -23,7 +23,7 @@ export function createServer(sessionManager: SessionManager, secretStore?: Secre
     );
     res.setHeader(
       "Access-Control-Allow-Headers",
-      "Content-Type, Authorization"
+      "Content-Type, Authorization, X-Shellshock"
     );
     if (_req.method === "OPTIONS") {
       res.sendStatus(204);
@@ -181,6 +181,11 @@ export function createServer(sessionManager: SessionManager, secretStore?: Secre
   // GET /s/:authId — retrieve encrypted secret (memory-only, burn after reading)
   if (secretStore) {
     app.get("/s/:authId", (req, res) => {
+      if (req.headers["x-shellshock"] !== "1") {
+        res.status(404).type("text").send("Not found.\n");
+        return;
+      }
+
       const ip = req.ip || req.socket.remoteAddress || "unknown";
       const blob = secretStore.retrieve(req.params.authId, ip);
 
