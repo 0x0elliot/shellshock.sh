@@ -13,15 +13,112 @@
       color: #e0e0e0;
       min-height: 100vh;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
       padding: 2rem;
+      gap: 4rem;
       -webkit-font-smoothing: antialiased;
     }
 
     .hero {
       text-align: center;
       max-width: 760px;
+    }
+
+    .docs {
+      max-width: 680px;
+      width: 100%;
+      text-align: left;
+    }
+
+    .docs h2 {
+      font-size: 1.1rem;
+      color: #e0e0e0;
+      margin-bottom: 1.5rem;
+      font-weight: 600;
+    }
+
+    .docs h3 {
+      font-size: 0.85rem;
+      color: #bb9af7;
+      margin-top: 2rem;
+      margin-bottom: 0.75rem;
+      font-weight: 600;
+    }
+
+    .docs p {
+      font-size: 0.82rem;
+      color: #888;
+      line-height: 1.7;
+      margin-bottom: 1rem;
+    }
+
+    .docs ol {
+      list-style: none;
+      counter-reset: steps;
+      padding: 0;
+      margin-bottom: 1.5rem;
+    }
+
+    .docs ol li {
+      counter-increment: steps;
+      font-size: 0.8rem;
+      color: #a9b1d6;
+      line-height: 1.7;
+      padding-left: 1.8rem;
+      position: relative;
+      margin-bottom: 0.5rem;
+    }
+
+    .docs ol li::before {
+      content: counter(steps);
+      position: absolute;
+      left: 0;
+      color: #565f89;
+      font-weight: 600;
+    }
+
+    .docs .code-block {
+      background: #161616;
+      border: 1px solid #2a2a2a;
+      border-radius: 6px;
+      padding: 0.8rem 1rem;
+      margin-bottom: 1rem;
+      overflow-x: auto;
+    }
+
+    .docs .code-block code {
+      font-size: 0.75rem;
+      color: #7dcfff;
+      white-space: pre;
+    }
+
+    .docs .note {
+      font-size: 0.75rem;
+      color: #565f89;
+      border-left: 2px solid #2a2a2a;
+      padding-left: 0.75rem;
+      margin-top: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .docs .props {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 0.4rem 1.2rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .docs .props dt {
+      font-size: 0.75rem;
+      color: #9ece6a;
+      font-weight: 600;
+    }
+
+    .docs .props dd {
+      font-size: 0.75rem;
+      color: #888;
     }
 
     .ascii {
@@ -251,6 +348,75 @@
       <span class="sep">/</span>
       <a href="https://github.com/0x0elliot/shellshock.sh#readme">docs</a>
     </p>
+
+  </div>
+
+  <div class="docs">
+
+    <h2>How It Works</h2>
+
+    <h3>Secret Sharing</h3>
+    <p>
+      Share API keys, tokens, and credentials end-to-end encrypted. The decryption key
+      never reaches the server, so even over ngrok, the middleman can't read your secrets.
+    </p>
+
+    <ol>
+      <li>Run the share script (or press <code style="color:#e0af68">Ctrl+S</code> in the server TUI)</li>
+      <li>Type your secret and press Enter</li>
+      <li>A one-liner is generated and copied to your clipboard</li>
+      <li>Send the one-liner to the recipient over any channel</li>
+      <li>Recipient runs it. Secret is decrypted locally and destroyed from memory.</li>
+    </ol>
+
+    <div class="code-block"><code><span style="color:#565f89">$</span> curl -sL shellshock.sh/share | bash</code></div>
+    <p class="note">
+      The secret is encrypted with AES-256-CBC. The server stores only the ciphertext in memory.
+      The decryption key lives in the one-liner the recipient runs, never on the server.
+      Burns after first retrieval. Auto-expires in 15 minutes.
+    </p>
+
+    <h3>Remote Debugging</h3>
+    <p>
+      A support engineer runs the server, the customer connects with a one-liner.
+      Every command the engineer sends requires explicit approval on the customer's terminal.
+    </p>
+
+    <ol>
+      <li>Engineer starts the server and creates a session</li>
+      <li>Customer runs the connect command</li>
+      <li>An RSA-2048 handshake verifies the connection</li>
+      <li>Engineer types commands. Each one is prompted individually on the customer's screen.</li>
+      <li>Compound commands like <code style="color:#7dcfff">ls && rm -rf /</code> are split and prompted per-part</li>
+    </ol>
+
+    <div class="code-block"><code><span style="color:#565f89">$</span> curl -sL shellshock.sh/get | bash</code></div>
+    <p class="note">
+      Commands are parsed with a character-level finite state machine, not regex.
+      Proxy commands (sudo, env, xargs) are classified by their inner command.
+      Interactive commands (vim, python) give the customer a choice: control it themselves or let the engineer drive.
+    </p>
+
+    <h3>Security</h3>
+
+    <dl class="props">
+      <dt>Encryption</dt>
+      <dd>AES-256-CBC (secrets), RSA-2048 OAEP (session handshake)</dd>
+      <dt>Storage</dt>
+      <dd>Secrets in memory only. Never written to disk, no database, no logs.</dd>
+      <dt>Burn after reading</dt>
+      <dd>Secret is destroyed after first retrieval</dd>
+      <dt>Auto-expiry</dt>
+      <dd>Defaults to 15 minutes</dd>
+      <dt>Split-token</dt>
+      <dd>Auth ID authenticates the request. Decryption key stays client-side.</dd>
+      <dt>Bot protection</dt>
+      <dd>Requires a custom header. Link preview bots (WhatsApp, Slack, etc.) won't trigger retrieval.</dd>
+      <dt>Command safety</dt>
+      <dd>Character-level FSM parser. Every command prompted individually. Compound commands split per-part.</dd>
+      <dt>Permission rules</dt>
+      <dd>Per-session. Approving "git" for one session doesn't carry over.</dd>
+    </dl>
 
   </div>
 
