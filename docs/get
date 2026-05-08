@@ -30,10 +30,9 @@ fi
 
 # If a URL was passed, go straight to client mode
 if [ -n "$1" ] && echo "$1" | grep -qE "^https?://"; then
-  echo "  Installing shellshock-client@nightly..."
-  npm install -g shellshock-client@nightly
+  echo "  Starting shellshock-client..."
   echo ""
-  shellshock-client "$1" < /dev/tty
+  npx shellshock-client@nightly "$1" < /dev/tty
   exit 0
 fi
 
@@ -48,8 +47,7 @@ read -r choice < /dev/tty
 case "$choice" in
   1)
     echo ""
-    echo "  Installing shellshock.sh@nightly..."
-    npm install -g shellshock.sh@nightly
+    echo "  Starting shellshock.sh@nightly..."
 
     USE_NGROK=""
     if command -v ngrok &>/dev/null; then
@@ -66,18 +64,15 @@ case "$choice" in
       echo ""
       echo "  Starting server + ngrok tunnel..."
       echo ""
-      shellshock < /dev/tty
+      npx shellshock.sh@nightly < /dev/tty
     else
       echo ""
       echo "  Starting server..."
       echo ""
-      shellshock --no-tunnel < /dev/tty
+      npx shellshock.sh@nightly --no-tunnel < /dev/tty
     fi
     ;;
   2)
-    echo ""
-    echo "  Installing shellshock-client@nightly..."
-    npm install -g shellshock-client@nightly
     echo ""
     echo "  You need a session URL from your engineer."
     echo "  Ask them to run:"
@@ -93,7 +88,7 @@ case "$choice" in
       exit 1
     fi
     echo ""
-    shellshock-client "$url" < /dev/tty
+    npx shellshock-client@nightly "$url" < /dev/tty
     ;;
   *)
     echo "  Invalid choice."

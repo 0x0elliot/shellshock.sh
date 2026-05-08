@@ -26,8 +26,7 @@ if ! command -v npx &>/dev/null; then
   exit 1
 fi
 
-echo "  Installing shellshock.sh@nightly..."
-npm install -g shellshock.sh@nightly
+echo "  Starting shellshock.sh@nightly..."
 
 USE_NGROK=""
 if command -v ngrok &>/dev/null; then
@@ -46,7 +45,7 @@ echo "  Press Ctrl+S to share a secret once the TUI loads."
 echo ""
 
 if [ -n "$USE_NGROK" ]; then
-  shellshock < /dev/tty
+  npx shellshock.sh@nightly < /dev/tty
 else
-  shellshock --no-tunnel < /dev/tty
+  npx shellshock.sh@nightly --no-tunnel < /dev/tty
 fi
