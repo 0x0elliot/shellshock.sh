@@ -515,6 +515,22 @@ export default function App({ serverBaseUrl, sessionId, token }: AppProps) {
     processedMsgCountRef.current = messages.length;
   }, [messages, processRequest, handshake.state]);
 
+  // Trap SIGINT during interactive runs so Ctrl+C kills only the child, not the session
+  useEffect(() => {
+    if (!interactiveRun) return;
+
+    const prevListeners = process.rawListeners("SIGINT").slice();
+    process.removeAllListeners("SIGINT");
+    process.on("SIGINT", () => {});
+
+    return () => {
+      process.removeAllListeners("SIGINT");
+      for (const l of prevListeners) {
+        process.on("SIGINT", l as (...args: unknown[]) => void);
+      }
+    };
+  }, [interactiveRun]);
+
   // Client-interactive mode — hand the terminal directly to the child process.
   // stdio:"inherit" gives the child direct fd 0/1/2 ownership. No PTY, no
   // stdin forwarding, no terminal response filtering needed.
