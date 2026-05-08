@@ -204,7 +204,7 @@ shellshock-share --port 5000 --ttl 30
 The recipient runs the one-liner — no install needed, just `curl` + `openssl`:
 
 ```bash
-curl -sf -H "ngrok-skip-browser-warning: 1" https://<url>/s/<id> | openssl enc -aes-256-cbc -d -a -md sha256 -pass pass:<key> 2>/dev/null
+curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" https://<url>/s/<id> | openssl enc -aes-256-cbc -d -a -md sha256 -pass pass:<key> 2>/dev/null
 ```
 
 Or via the helper script:
@@ -220,6 +220,7 @@ curl -sL shellshock.sh/secret | bash -s -- <url> <key>
 - **Burn after reading** — destroyed after first retrieval
 - **Auto-expiry** — defaults to 15 minutes (configurable with `--ttl`)
 - **Split-token** — auth ID authenticates the request, decryption key stays client-side
+- **Bot protection** — requires `X-Shellshock: 1` header. Link preview bots (WhatsApp, Slack, Discord) won't trigger retrieval.
 
 ## Installation
 
