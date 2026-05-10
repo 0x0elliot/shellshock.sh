@@ -111,7 +111,7 @@ export function SecretSharePanel({
 
   function copyWindowsCmd() {
     if (phase.type !== "waiting") return;
-    const cmd = `curl.exe -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" ${phase.fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass pass:${phase.entry.decryptKey}`;
+    const cmd = `curl.exe -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" \`\n  ${phase.fetchUrl} \`\n  | openssl enc -aes-256-cbc -d -a -md sha256 \`\n    -pass pass:${phase.entry.decryptKey} 2>$null`;
     if (copyToClipboard(cmd)) setCopied("windows");
   }
 
@@ -236,7 +236,7 @@ export function SecretSharePanel({
 
   if (phase.type === "waiting") {
     const directCmd = `curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" \\\n      ${phase.fetchUrl} \\\n      | openssl enc -aes-256-cbc -d -a -md sha256 \\\n        -pass fd:3 3<<<'${phase.entry.decryptKey}' 2>/dev/null \\\n      || echo "Error: secret not found or already retrieved"`;
-    const windowsCmd = `curl.exe -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" ^\n      ${phase.fetchUrl} ^\n      | openssl enc -aes-256-cbc -d -a -md sha256 ^\n        -pass pass:${phase.entry.decryptKey}`;
+    const windowsCmd = `curl.exe -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" \`\n      ${phase.fetchUrl} \`\n      | openssl enc -aes-256-cbc -d -a -md sha256 \`\n        -pass pass:${phase.entry.decryptKey} 2>$null`;
     const scriptCmd = `curl -sL shellshock.sh/secret | bash -s -- ${phase.fetchUrl} ${phase.entry.decryptKey}`;
 
     return (
@@ -257,7 +257,7 @@ export function SecretSharePanel({
           <Text>{" "}</Text>
           <Text color="#7dcfff">{"    "}{directCmd}</Text>
           <Text>{" "}</Text>
-          <Text color="#565f89" dimColor>{"  "}Windows (PowerShell / cmd):</Text>
+          <Text color="#565f89" dimColor>{"  "}Windows (PowerShell):</Text>
           <Text>{" "}</Text>
           <Text color="#565f89">{"    "}{windowsCmd}</Text>
           <Text>{" "}</Text>

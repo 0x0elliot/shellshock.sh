@@ -224,10 +224,10 @@ async function main() {
       `    curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" \\\n      ${fetchUrl} \\\n      | openssl enc -aes-256-cbc -d -a -md sha256 \\\n        -pass fd:3 3<<<'${decryptKey}' 2>/dev/null \\\n      || echo "Error: secret not found or already retrieved"`
     );
     console.log("");
-    console.log("  Windows (PowerShell / cmd):");
+    console.log("  Windows (PowerShell):");
     console.log("");
     console.log(
-      `    curl.exe -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" ^\n      ${fetchUrl} ^\n      | openssl enc -aes-256-cbc -d -a -md sha256 ^\n        -pass pass:${decryptKey}`
+      `    curl.exe -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" \`\n      ${fetchUrl} \`\n      | openssl enc -aes-256-cbc -d -a -md sha256 \`\n        -pass pass:${decryptKey} 2>$null`
     );
     console.log("");
     console.log(
