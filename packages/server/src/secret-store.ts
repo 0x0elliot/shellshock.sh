@@ -15,7 +15,7 @@ export class SecretStore extends EventEmitter {
   create(plaintext: string, ttlMinutes = 15): SecretEntry {
     const authId = generateAuthId();
     const decryptKey = generatePassword();
-    const blob = opensslEncrypt(plaintext, decryptKey);
+    const blob = opensslEncrypt(plaintext + "\n", decryptKey);
 
     const entry: SecretEntry = {
       authId,

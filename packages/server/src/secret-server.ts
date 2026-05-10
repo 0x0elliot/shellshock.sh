@@ -128,7 +128,7 @@ async function main() {
 
   const authId = generateAuthId();
   const decryptKey = generatePassword();
-  const blob = opensslEncrypt(secret, decryptKey);
+  const blob = opensslEncrypt(secret + "\n", decryptKey);
 
   store.set(authId, {
     blob,
@@ -218,10 +218,16 @@ async function main() {
       `    curl -sL shellshock.sh/secret | bash -s -- ${fetchUrl} ${decryptKey}`
     );
     console.log("");
-    console.log("  Or directly:");
+    console.log("  Or directly (Unix/macOS):");
     console.log("");
     console.log(
-      `    curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" ${fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass fd:3 3<<<'${decryptKey}' 2>/dev/null || echo "Error: secret not found or already retrieved"`
+      `    curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" \\\n      ${fetchUrl} \\\n      | openssl enc -aes-256-cbc -d -a -md sha256 \\\n        -pass fd:3 3<<<'${decryptKey}' 2>/dev/null \\\n      || echo "Error: secret not found or already retrieved"`
+    );
+    console.log("");
+    console.log("  Windows (PowerShell / cmd):");
+    console.log("");
+    console.log(
+      `    curl.exe -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" ^\n      ${fetchUrl} ^\n      | openssl enc -aes-256-cbc -d -a -md sha256 ^\n        -pass pass:${decryptKey}`
     );
     console.log("");
     console.log(

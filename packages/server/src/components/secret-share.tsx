@@ -24,7 +24,7 @@ export function SecretSharePanel({
   const [phase, setPhase] = useState<Phase>({ type: "input" });
   const [value, setValue] = useState("");
   const [cursor, setCursor] = useState(0);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<false | "unix" | "windows">(false);
   const [remaining, setRemaining] = useState<number | null>(null);
 
   const copyToClipboard = useCallback((text: string): boolean => {
@@ -99,14 +99,20 @@ export function SecretSharePanel({
     const fetchUrl = `${baseUrl}/s/${entry.authId}`;
     setPhase({ type: "waiting", entry, fetchUrl });
 
-    const cmd = `curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" ${fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass fd:3 3<<<'${entry.decryptKey}' 2>/dev/null || echo "Error: secret not found or already retrieved"`;
-    if (copyToClipboard(cmd)) setCopied(true);
+    const cmd = `curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" \\\n  ${fetchUrl} \\\n  | openssl enc -aes-256-cbc -d -a -md sha256 \\\n    -pass fd:3 3<<<'${entry.decryptKey}' 2>/dev/null \\\n  || echo "Error: secret not found or already retrieved"`;
+    if (copyToClipboard(cmd)) setCopied("unix");
   }
 
   function copyRecipientCmd() {
     if (phase.type !== "waiting") return;
-    const cmd = `curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" ${phase.fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass fd:3 3<<<'${phase.entry.decryptKey}' 2>/dev/null || echo "Error: secret not found or already retrieved"`;
-    if (copyToClipboard(cmd)) setCopied(true);
+    const cmd = `curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" \\\n  ${phase.fetchUrl} \\\n  | openssl enc -aes-256-cbc -d -a -md sha256 \\\n    -pass fd:3 3<<<'${phase.entry.decryptKey}' 2>/dev/null \\\n  || echo "Error: secret not found or already retrieved"`;
+    if (copyToClipboard(cmd)) setCopied("unix");
+  }
+
+  function copyWindowsCmd() {
+    if (phase.type !== "waiting") return;
+    const cmd = `curl.exe -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" ${phase.fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass pass:${phase.entry.decryptKey}`;
+    if (copyToClipboard(cmd)) setCopied("windows");
   }
 
   useInput((input, key) => {
@@ -126,6 +132,8 @@ export function SecretSharePanel({
     if (phase.type === "waiting") {
       if (input === "c") {
         copyRecipientCmd();
+      } else if (input === "w") {
+        copyWindowsCmd();
       }
       return;
     }
@@ -227,7 +235,8 @@ export function SecretSharePanel({
   }
 
   if (phase.type === "waiting") {
-    const directCmd = `curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" ${phase.fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass fd:3 3<<<'${phase.entry.decryptKey}' 2>/dev/null || echo "Error: secret not found or already retrieved"`;
+    const directCmd = `curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" \\\n      ${phase.fetchUrl} \\\n      | openssl enc -aes-256-cbc -d -a -md sha256 \\\n        -pass fd:3 3<<<'${phase.entry.decryptKey}' 2>/dev/null \\\n      || echo "Error: secret not found or already retrieved"`;
+    const windowsCmd = `curl.exe -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" ^\n      ${phase.fetchUrl} ^\n      | openssl enc -aes-256-cbc -d -a -md sha256 ^\n        -pass pass:${phase.entry.decryptKey}`;
     const scriptCmd = `curl -sL shellshock.sh/secret | bash -s -- ${phase.fetchUrl} ${phase.entry.decryptKey}`;
 
     return (
@@ -248,17 +257,22 @@ export function SecretSharePanel({
           <Text>{" "}</Text>
           <Text color="#7dcfff">{"    "}{directCmd}</Text>
           <Text>{" "}</Text>
-          <Text color="#565f89" dimColor>{"  "}Or via helper script:</Text>
+          <Text color="#565f89" dimColor>{"  "}Windows (PowerShell / cmd):</Text>
+          <Text>{" "}</Text>
+          <Text color="#565f89">{"    "}{windowsCmd}</Text>
+          <Text>{" "}</Text>
+          <Text color="#565f89" dimColor>{"  "}Or via helper script (Unix):</Text>
           <Text>{" "}</Text>
           <Text color="#565f89">{"    "}{scriptCmd}</Text>
           <Text>{" "}</Text>
           {copied ? (
             <Text color="#9ece6a" bold>
-              {"  "}✓ Copied to clipboard
+              {"  "}✓ Copied ({copied === "windows" ? "Windows" : "Unix"} command)
             </Text>
           ) : (
             <Text color="#565f89" dimColor>
-              {"  "}Press <Text color="#e0af68">c</Text> to copy
+              {"  "}Press <Text color="#e0af68">c</Text> to copy{"  |  "}
+              <Text color="#e0af68">w</Text> copy Windows version
             </Text>
           )}
           <Text>{" "}</Text>
