@@ -13,6 +13,7 @@ export function createServer(sessionManager: SessionManager, secretStore?: Secre
   const engineerToken = crypto.randomBytes(24).toString("base64url");
   const app = express();
 
+  app.set("trust proxy", "loopback");
   app.use(express.json());
 
   app.use((_req, res, next) => {
@@ -186,7 +187,8 @@ export function createServer(sessionManager: SessionManager, secretStore?: Secre
         return;
       }
 
-      const ip = req.ip || req.socket.remoteAddress || "unknown";
+      const rawIp = req.ip || req.socket.remoteAddress || "unknown";
+      const ip = rawIp.replace(/^::ffff:/, "");
       const blob = secretStore.retrieve(req.params.authId, ip);
 
       if (!blob) {

@@ -19,15 +19,6 @@ const requestedPort = parseInt(getFlag("--port", "4801"), 10);
 const ttlMinutes = parseInt(getFlag("--ttl", "15"), 10);
 const noTunnel = argv.includes("--no-tunnel");
 
-let secretArg: string | null = null;
-for (let i = 0; i < argv.length; i++) {
-  if (argv[i] === "--port" || argv[i] === "--ttl") {
-    i++;
-  } else if (!argv[i].startsWith("--")) {
-    secretArg = argv[i];
-  }
-}
-
 // --- Secret store (memory only — nothing touches disk) ---
 
 interface Entry {
@@ -120,15 +111,10 @@ async function readStdin(): Promise<string> {
 // --- Main ---
 
 async function main() {
-  let secret: string;
-  if (secretArg) {
-    secret = secretArg;
-  } else {
-    if (process.stdin.isTTY) {
-      process.stderr.write("\n  Enter secret (then Ctrl+D):\n\n  ");
-    }
-    secret = await readStdin();
+  if (process.stdin.isTTY) {
+    process.stderr.write("\n  Enter secret (then Ctrl+D):\n\n  ");
   }
+  const secret = await readStdin();
 
   if (!secret) {
     console.error("  Error: no secret provided.");
@@ -152,6 +138,7 @@ async function main() {
   // --- HTTP server ---
 
   const app = express();
+  app.set("trust proxy", "loopback");
 
   app.get("/s/:authId", (req, res) => {
     if (req.headers["x-shellshock"] !== "1") {
@@ -176,7 +163,8 @@ async function main() {
     store.delete(req.params.authId);
     res.type("text").send(entry.blob + "\n");
 
-    const ip = req.ip || req.socket.remoteAddress;
+    const rawIp = req.ip || req.socket.remoteAddress || "unknown";
+    const ip = rawIp.replace(/^::ffff:/, "");
     console.log(`\n  Retrieved by ${ip}`);
     console.log("  Shutting down.\n");
     clearTimeout(expiryTimeout);
@@ -233,7 +221,7 @@ async function main() {
     console.log("  Or directly:");
     console.log("");
     console.log(
-      `    curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" ${fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass pass:${decryptKey} 2>/dev/null || echo "Error: secret not found or already retrieved"`
+      `    curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" ${fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass fd:3 3<<<'${decryptKey}' 2>/dev/null || echo "Error: secret not found or already retrieved"`
     );
     console.log("");
     console.log(

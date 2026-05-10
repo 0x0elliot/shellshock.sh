@@ -99,13 +99,13 @@ export function SecretSharePanel({
     const fetchUrl = `${baseUrl}/s/${entry.authId}`;
     setPhase({ type: "waiting", entry, fetchUrl });
 
-    const cmd = `curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" ${fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass pass:${entry.decryptKey} 2>/dev/null || echo "Error: secret not found or already retrieved"`;
+    const cmd = `curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" ${fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass fd:3 3<<<'${entry.decryptKey}' 2>/dev/null || echo "Error: secret not found or already retrieved"`;
     if (copyToClipboard(cmd)) setCopied(true);
   }
 
   function copyRecipientCmd() {
     if (phase.type !== "waiting") return;
-    const cmd = `curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" ${phase.fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass pass:${phase.entry.decryptKey} 2>/dev/null || echo "Error: secret not found or already retrieved"`;
+    const cmd = `curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" ${phase.fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass fd:3 3<<<'${phase.entry.decryptKey}' 2>/dev/null || echo "Error: secret not found or already retrieved"`;
     if (copyToClipboard(cmd)) setCopied(true);
   }
 
@@ -227,7 +227,7 @@ export function SecretSharePanel({
   }
 
   if (phase.type === "waiting") {
-    const directCmd = `curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" ${phase.fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass pass:${phase.entry.decryptKey} 2>/dev/null || echo "Error: secret not found or already retrieved"`;
+    const directCmd = `curl -sf -H "X-Shellshock: 1" -H "ngrok-skip-browser-warning: 1" ${phase.fetchUrl} | openssl enc -aes-256-cbc -d -a -md sha256 -pass fd:3 3<<<'${phase.entry.decryptKey}' 2>/dev/null || echo "Error: secret not found or already retrieved"`;
     const scriptCmd = `curl -sL shellshock.sh/secret | bash -s -- ${phase.fetchUrl} ${phase.entry.decryptKey}`;
 
     return (
