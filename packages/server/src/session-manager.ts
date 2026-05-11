@@ -5,6 +5,8 @@ import type { Response } from "express";
 import {
   encryptMessage,
   decryptMessage,
+  classifyCommand,
+  CommandClassification,
 } from "shellshock.sh-shared";
 import type {
   ClientInfo,
@@ -286,12 +288,15 @@ export class SessionManager extends EventEmitter {
 
     const commandId = nanoid(12);
 
+    const autoInteractive = !interactive &&
+      classifyCommand(command) === CommandClassification.Interactive;
+
     const request: CommandRequest = {
       type: "command_request",
       id: commandId,
       command,
       cwd,
-      ...(interactive ? { interactive: true } : {}),
+      ...((interactive || autoInteractive) ? { interactive: true } : {}),
     };
 
     session.pendingCommands.set(commandId, request);
@@ -363,14 +368,18 @@ export class SessionManager extends EventEmitter {
     if ("_enc" in rawMsg && session.sessionKey) {
       try {
         msg = JSON.parse(decryptMessage(session.sessionKey, rawMsg._enc));
-      } catch {
+      } catch (e) {
+        this.emit("debug", `decrypt failed for session ${sessionId}: ${e}`);
         return;
       }
     } else if ("_enc" in rawMsg) {
+      this.emit("debug", `encrypted msg but no session key for ${sessionId}`);
       return;
     } else {
       msg = rawMsg;
     }
+
+    this.emit("debug", `handleClientResponse: ${msg.type} ${"id" in msg ? msg.id : ""}`);
 
     switch (msg.type) {
       case "handshake_response": {

@@ -28,11 +28,30 @@ if ! command -v npx &>/dev/null; then
   exit 1
 fi
 
+# Ensure packages are installed/up-to-date (skip npx re-download each run)
+ensure_pkg() {
+  local pkg="$1"
+  local installed
+  installed=$(npm ls -g "$pkg" --depth=0 2>/dev/null | grep "$pkg@" | sed 's/.*@//')
+  local latest
+  latest=$(npm view "$pkg@nightly" version 2>/dev/null)
+
+  if [ "$installed" = "$latest" ] && command -v "$2" &>/dev/null; then
+    return 0
+  fi
+
+  echo "  Installing $pkg@nightly..."
+  npm install -g "$pkg@nightly" --silent 2>/dev/null
+}
+
+ensure_pkg "shellshock.sh" "shellshock"
+ensure_pkg "shellshock-client" "shellshock-client"
+
 # If a URL was passed, go straight to client mode
 if [ -n "$1" ] && echo "$1" | grep -qE "^https?://"; then
   echo "  Starting shellshock-client..."
   echo ""
-  npx shellshock-client@nightly "$1" < /dev/tty
+  shellshock-client "$1" < /dev/tty
   exit 0
 fi
 
@@ -64,12 +83,12 @@ case "$choice" in
       echo ""
       echo "  Starting server + ngrok tunnel..."
       echo ""
-      npx -p shellshock.sh@nightly shellshock < /dev/tty
+      shellshock < /dev/tty
     else
       echo ""
       echo "  Starting server..."
       echo ""
-      npx -p shellshock.sh@nightly shellshock --no-tunnel < /dev/tty
+      shellshock --no-tunnel < /dev/tty
     fi
     ;;
   2)
@@ -88,7 +107,7 @@ case "$choice" in
       exit 1
     fi
     echo ""
-    npx shellshock-client@nightly "$url" < /dev/tty
+    shellshock-client "$url" < /dev/tty
     ;;
   *)
     echo "  Invalid choice."

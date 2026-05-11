@@ -196,6 +196,12 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
       setInteractiveSession({ commandId, mode });
     }
 
+    function onDebug(msg: string) {
+      // eslint-disable-next-line no-console
+      process.stderr.write(`[debug] ${msg}\n`);
+    }
+
+    sessionManager.on("debug", onDebug);
     sessionManager.on("clientConnected", onClientConnected);
     sessionManager.on("clientDisconnected", onClientDisconnected);
     sessionManager.on("handshakeComplete", onHandshakeComplete);
@@ -207,6 +213,7 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
     sessionManager.on("interactiveStarted", onInteractiveStarted);
 
     return () => {
+      sessionManager.off("debug", onDebug);
       sessionManager.off("clientConnected", onClientConnected);
       sessionManager.off("clientDisconnected", onClientDisconnected);
       sessionManager.off("handshakeComplete", onHandshakeComplete);
