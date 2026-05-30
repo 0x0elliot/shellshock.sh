@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { execSync } from "node:child_process";
 import { Box, Text, useInput } from "ink";
 import { AnimatedSpinner } from "./animated-spinner.js";
