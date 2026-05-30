@@ -320,13 +320,17 @@ export function App({ sessionManager, secretStore, host, port, tunnelUrl }: AppP
 
     if (showSecretPanel) return;
 
-    if (notification) {
+    // Explicit shortcuts take priority over the "press any key to dismiss"
+    // notification, so they don't get swallowed when one is showing (e.g. the
+    // session-created banner on startup).
+    if (input === "s" && key.ctrl) {
       setNotification(null);
+      setShowSecretPanel(true);
       return;
     }
 
-    if (input === "s" && key.ctrl) {
-      setShowSecretPanel(true);
+    if (notification) {
+      setNotification(null);
       return;
     }
 
